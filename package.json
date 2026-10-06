@@ -4,13 +4,17 @@
   "private": true,
   "description": "A visual PostgreSQL client that explains what the database is doing",
   "license": "MIT",
-  "main": "./out/main/index.js",
+  "main": "./out/main/main.js",
+  "packageManager": "pnpm@12.3.4",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "postinstall": "install-electron",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit"
+    "typecheck": "tsc -p tsconfig.desktop.json --noEmit && tsc -p tsconfig.web.json --noEmit"
   },
   "dependencies": {
     "react": "19.3.0",

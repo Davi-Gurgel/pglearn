@@ -12,5 +12,5 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src/renderer/src"]
+  "include": ["src/web", "src/contracts"]
 }

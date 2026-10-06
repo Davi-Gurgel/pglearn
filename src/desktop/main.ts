@@ -6,15 +6,16 @@ function createWindow(): void {
     width: 1200,
     height: 800,
     webPreferences: {
-      preload: join(__dirname, "../preload/index.js"),
+      preload: join(__dirname, "../preload/preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
 
-  // In dev, electron-vite serves the renderer from a Vite dev server.
+  // In dev, electron-vite serves the renderer from a Vite dev server. A packaged
+  // app ignores the variable, so nobody can point it at another URL.
   const devServerUrl = process.env["ELECTRON_RENDERER_URL"];
-  if (devServerUrl) {
+  if (!app.isPackaged && devServerUrl) {
     void window.loadURL(devServerUrl);
   } else {
     void window.loadFile(join(__dirname, "../renderer/index.html"));

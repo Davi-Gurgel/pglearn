@@ -54,17 +54,9 @@ The developer is new to PostgreSQL (knows general database concepts). In-app exp
 ## How it works
 
 - Electron + React + TypeScript, built with electron-vite (one config for main, preload and renderer). Packaging (electron-builder) comes later.
-- The renderer is a plain Vite app: `pnpm dev` also serves it at http://localhost:5173, so agents can test the UI in a browser. There `window.api` (the preload bridge) is `undefined`; the UI must cope with that.
+- The renderer is a plain Vite app: `pnpm dev` also serves it at http://localhost:5173, so agents can test the UI in a browser. There `window.desktopBridge` (the preload bridge) is `undefined`; the UI must cope with that.
 - Effect v4 lives in the main process, where the real effects are: connection lifecycle, query cancellation, timeouts, and typed errors. The renderer stays plain React and talks to main over IPC. Don't spread Effect into the renderer without a concrete reason.
 
 ## Where code lives
 
-- `src/main`: Electron main process (Node). Window lifecycle now; Postgres and Effect later.
-- `src/preload`: the only bridge to the renderer, exposed as `window.api`. The renderer never touches Node or Electron directly.
-- `src/renderer`: the React app.
-
-## Traps
-
-- **Vite is pinned to 7.** electron-vite 5 supports Vite 5 to 7, and `@vitejs/plugin-react` 6 requires Vite 8, so stay on plugin-react 5 until electron-vite 6 is stable.
-- **Electron 44 doesn't download its binary on install**, and electron-vite doesn't trigger the download either. The `postinstall` script (`install-electron`) does it.
-- **Agent shells may export `ELECTRON_RUN_AS_NODE=1`** (T3 Code is itself Electron). Then `pnpm dev` fails with `Cannot read properties of undefined (reading 'whenReady')`. Run `env -u ELECTRON_RUN_AS_NODE pnpm dev`.
+See [docs/architecture.md](docs/architecture.md). Update it, not this file, when the layout changes.
