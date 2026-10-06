@@ -11,9 +11,9 @@
   },
   "scripts": {
     "postinstall": "install-electron",
-    "dev": "electron-vite dev",
+    "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
     "build": "electron-vite build",
-    "preview": "electron-vite preview",
+    "preview": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
     "typecheck": "tsc -p tsconfig.desktop.json --noEmit && tsc -p tsconfig.web.json --noEmit"
   },
   "dependencies": {
