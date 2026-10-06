@@ -4,7 +4,11 @@
 
 1. Branch from `main`: `feat/table-viewer`, `fix/connection-timeout`, `docs/readme`.
 2. Open a pull request into `main`. CI must pass.
-3. Squash merge.
+3. Squash merge. The commit message is only the PR title plus its number, with an empty body (GitHub's default lists every commit in the branch):
+
+   ```sh
+   gh pr merge 1 --squash --subject "feat: add table viewer (#1)" --body ""
+   ```
 
 ## Commits
 
