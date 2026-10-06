@@ -18,8 +18,6 @@ Channel both "measure twice, cut once" and "yagni". Fight scope creep. Try to ho
 
 The rest of this document is meant to help you navigate the codebase and make changes effectively. Think of these instructions less as "hard rules", more as "good defaults". The developer's preferences should be able to override anything here.
 
-Update this document as we work.
-
 ## Documentation
 
 Most code changes do not need an internal documentation change. Agents can read the code.
