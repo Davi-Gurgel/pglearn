@@ -1,0 +1,5 @@
+# esbuild's postinstall is only an optimization; its platform binary comes from an optional dependency.
+allowBuilds:
+  esbuild: false
+minimumReleaseAgeExclude:
+  - vite@7.3.7
