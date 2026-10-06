@@ -1,0 +1,27 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Node
+node_modules/
+dist/
+.vite/
+*.log
+
+# Env and local data
+.env
+.env.*
+!.env.example
+*.local
+
+# Sample database (downloaded by db/fetch-pagila.sh)
+db/init/
+
+# Local plans (see AGENTS.md)
+docs/plans/
