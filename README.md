@@ -48,7 +48,14 @@ docker compose exec postgres psql -U postgres -d pagila
 
 The sample data loads only on first start. To reset the database: `docker compose down -v && docker compose up -d`.
 
-App setup instructions will be added once the app is scaffolded.
+Run the app (Node 24 and pnpm):
+
+```sh
+pnpm install
+pnpm dev        # opens the Electron window; the renderer is also at http://localhost:5173
+pnpm typecheck
+pnpm build
+```
 
 ## Branching and releases
 

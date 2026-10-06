@@ -1,0 +1,33 @@
+{
+  "name": "pglearn",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A visual PostgreSQL client that explains what the database is doing",
+  "license": "MIT",
+  "main": "./out/main/main.js",
+  "packageManager": "pnpm@12.3.4",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "postinstall": "install-electron",
+    "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
+    "typecheck": "tsc -p tsconfig.desktop.json --noEmit && tsc -p tsconfig.web.json --noEmit"
+  },
+  "dependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "44.5.1",
+    "electron-vite": "5.0.0",
+    "typescript": "7.0.2",
+    "vite": "^7.3.7"
+  }
+}

@@ -18,8 +18,6 @@ Channel both "measure twice, cut once" and "yagni". Fight scope creep. Try to ho
 
 The rest of this document is meant to help you navigate the codebase and make changes effectively. Think of these instructions less as "hard rules", more as "good defaults". The developer's preferences should be able to override anything here.
 
-Update this document as we work.
-
 ## Documentation
 
 Most code changes do not need an internal documentation change. Agents can read the code.
@@ -53,9 +51,10 @@ The developer is new to PostgreSQL (knows general database concepts). In-app exp
 
 ## How it works
 
-- Electron + React + TypeScript.
+- Electron + React + TypeScript, built with electron-vite (one config for main, preload and renderer). Packaging (electron-builder) comes later.
+- The renderer is a plain Vite app: `pnpm dev` also serves it at http://localhost:5173, so agents can test the UI in a browser. There `window.desktopBridge` (the preload bridge) is `undefined`; the UI must cope with that.
 - Effect v4 lives in the main process, where the real effects are: connection lifecycle, query cancellation, timeouts, and typed errors. The renderer stays plain React and talks to main over IPC. Don't spread Effect into the renderer without a concrete reason.
 
 ## Where code lives
 
-Soon.
+See [docs/architecture.md](docs/architecture.md). Update it, not this file, when the layout changes.
