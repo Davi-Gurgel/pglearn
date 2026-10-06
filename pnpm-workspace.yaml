@@ -3,3 +3,12 @@ allowBuilds:
   esbuild: false
 minimumReleaseAgeExclude:
   - vite@7.3.7
+# `pnpm update --latest` skips these on purpose:
+# - electron-vite 5 supports Vite 5 to 7, and @vitejs/plugin-react 6 needs Vite 8.
+#   Upgrade the three together once electron-vite 6 is stable.
+# - @types/node follows the Node that Electron bundles (Electron 44 ships Node 24).
+updateConfig:
+  ignoreDependencies:
+    - vite
+    - "@vitejs/plugin-react"
+    - "@types/node"
