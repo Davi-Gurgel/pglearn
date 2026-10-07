@@ -1,0 +1,6 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // `pnpm lint` also passes --disable-nested-config. Without it oxlint loads
+  // .repos/effect/.oxlintrc.json despite this ignore, and fails on its plugin.
+  "ignorePatterns": [".repos/**"]
+}

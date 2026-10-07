@@ -10,7 +10,7 @@ I'd like to improve my workflow with coding agents testing stuff during the deve
 
 ## A note from me
 
-I like ambitious ideas, simple systems, and software that feels obvious. Do not preserve complexity just because it already exists. Do not introduce machinery because it looks architecturally impressive. Understand the real constraint, then fight for the smallest model that makes the correct behavior unsurprising. 
+I like ambitious ideas, simple systems, and software that feels obvious. Do not preserve complexity just because it already exists. Do not introduce machinery because it looks architecturally impressive. Understand the real constraint, then fight for the smallest model that makes the correct behavior unsurprising.
 
 Make sure I understand everything in this codebase, so be ready to do explaining of some more advanced concepts and recomending learning resources.
 
