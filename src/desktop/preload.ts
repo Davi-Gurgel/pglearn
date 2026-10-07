@@ -1,4 +1,4 @@
-import { contextBridge } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
 import type { DesktopBridge } from "../contracts/ipc";
 
 const desktopBridge: DesktopBridge = {
@@ -7,6 +7,7 @@ const desktopBridge: DesktopBridge = {
     chrome: process.versions.chrome,
     node: process.versions.node,
   },
+  ping: () => ipcRenderer.invoke("db:ping"),
 };
 
 // The preload runs before the page, with access to Node and Electron, but the

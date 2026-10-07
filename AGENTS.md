@@ -54,7 +54,10 @@ The developer is new to PostgreSQL (knows general database concepts). In-app exp
 - Electron + React + TypeScript, built with electron-vite (one config for main, preload and renderer). Packaging (electron-builder) comes later.
 - The renderer is a plain Vite app: `pnpm dev` also serves it at http://localhost:5173, so agents can test the UI in a browser. There `window.desktopBridge` (the preload bridge) is `undefined`; the UI must cope with that.
 - Effect v4 lives in the main process, where the real effects are: connection lifecycle, query cancellation, timeouts, and typed errors. The renderer stays plain React and talks to main over IPC. Don't spread Effect into the renderer without a concrete reason.
+- Before writing Effect code, read `.repos/effect/LLMS.md`, then the source and tests under `.repos/effect/packages/` (`effect` and `sql/pg` are the ones we use). Prefer their patterns over invented ones or web results.
 
 ## Where code lives
 
 See [docs/architecture.md](docs/architecture.md). Update it, not this file, when the layout changes.
+
+`.repos/effect` is a vendored read-only reference. Never edit or import from it; app code imports from `node_modules` as usual.

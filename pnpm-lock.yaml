@@ -109,6 +109,12 @@ importers:
 
   .:
     dependencies:
+      '@effect/sql-pg':
+        specifier: 4.0.1
+        version: 4.0.1(effect@4.0.1)
+      effect:
+        specifier: 4.0.1
+        version: 4.0.1
       react:
         specifier: 19.3.0
         version: 19.3.0
@@ -231,6 +237,11 @@ packages:
   '@babel/types@7.29.8':
     resolution: {integrity: sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==}
     engines: {node: '>=6.9.0'}
+
+  '@effect/sql-pg@4.0.1':
+    resolution: {integrity: sha512-X5aqOxHNWqVXL+vyTQZLYDip65lm5rrZHuNkWyyr672iup1tjYAs5Dn9tHR5h1t0blpJ57j8Ng5G5AUQ8teIqA==}
+    peerDependencies:
+      effect: ^4.0.1
 
   '@electron-internal/extract-zip@1.0.5':
     resolution: {integrity: sha512-+bqFCP98pLI0Tt0XQo1TmlXtwjWchISndDOxCkEcIuUgXWpBnLyRI+2DU+mesvnMMX6L1XDqYNA0lXNDHd/yiA==}
@@ -900,6 +911,9 @@ packages:
       supports-color:
         optional: true
 
+  effect@4.0.1:
+    resolution: {integrity: sha512-b1VlQG9g8fwxE5QnIZuPoOP/0MsqHJSRKxUijjoM80E5q95FXrX5yWtY5XI8G+GJsBQAVSDbLS458z9a++uVvw==}
+
   electron-to-chromium@1.5.444:
     resolution: {integrity: sha512-5ss/uJfoDYDHT0lfJzT6FbcskIzROIOPf0BbbFkGcvDzoJU7i//9GDrwwIHQVmIsrAGiF3ihpADBRIsrEFt1rQ==}
 
@@ -1225,6 +1239,10 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
+
+  '@effect/sql-pg@4.0.1(effect@4.0.1)':
+    dependencies:
+      effect: 4.0.1
 
   '@electron-internal/extract-zip@1.0.5': {}
 
@@ -1624,6 +1642,8 @@ snapshots:
   debug@4.4.3:
     dependencies:
       ms: 2.1.3
+
+  effect@4.0.1: {}
 
   electron-to-chromium@1.5.444: {}
 

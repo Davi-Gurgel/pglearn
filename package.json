@@ -14,9 +14,12 @@
     "dev": "env -u ELECTRON_RUN_AS_NODE electron-vite dev",
     "build": "electron-vite build",
     "preview": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
-    "typecheck": "tsc -p tsconfig.desktop.json --noEmit && tsc -p tsconfig.web.json --noEmit"
+    "typecheck": "tsc -p tsconfig.desktop.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "sync:repos": ".repos/sync.sh"
   },
   "dependencies": {
+    "@effect/sql-pg": "4.0.1",
+    "effect": "4.0.1",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

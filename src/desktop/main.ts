@@ -1,5 +1,6 @@
 import { join } from "node:path";
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
+import { closeDatabase, pingDatabase } from "./database";
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -22,6 +23,8 @@ function createWindow(): void {
   }
 }
 
+ipcMain.handle("db:ping", () => pingDatabase());
+
 void app.whenReady().then(() => {
   createWindow();
 
@@ -34,4 +37,13 @@ void app.whenReady().then(() => {
 // macOS apps stay alive after the last window closes; everywhere else we quit.
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+// Close the pool before quitting, so Postgres gets a proper goodbye on each
+// connection instead of a dropped socket. Electron does not wait for promises
+// here, so we hold the quit and finish it once the pool is closed. It has to be
+// app.exit(): Electron ignores app.quit() while a quit is already under way.
+app.on("will-quit", (event) => {
+  event.preventDefault();
+  void closeDatabase().finally(() => app.exit());
 });
