@@ -6,7 +6,14 @@
 set -eu
 cd "$(dirname "$0")"
 version=$(node -p "require('../package.json').dependencies.effect")
+temp_dir=$(mktemp -d ./.effect-sync.XXXXXX)
+trap 'rm -rf "$temp_dir"' 0
+trap 'exit 1' HUP INT TERM
+
+# Keep the existing reference until both download and extraction succeed.
+curl -fsSL "https://codeload.github.com/Effect-TS/effect/tar.gz/refs/tags/effect@$version" \
+  -o "$temp_dir/effect.tar.gz"
+mkdir "$temp_dir/effect"
+tar -xz -f "$temp_dir/effect.tar.gz" -C "$temp_dir/effect" --strip-components=1
 rm -rf effect
-mkdir effect
-curl -fsSL "https://codeload.github.com/Effect-TS/effect/tar.gz/refs/tags/effect@$version" |
-  tar -xz -C effect --strip-components=1
+mv "$temp_dir/effect" effect
