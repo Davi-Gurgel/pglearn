@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { app, BrowserWindow, ipcMain } from "electron";
-import { closeDatabase, pingDatabase } from "./database";
+import { closeDatabase, pingDatabase } from "../backend/database";
 
 function createWindow(): void {
   const window = new BrowserWindow({

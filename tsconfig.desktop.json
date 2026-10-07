@@ -10,5 +10,5 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["electron.vite.config.ts", "src/desktop", "src/contracts"]
+  "include": ["electron.vite.config.ts", "src/desktop", "src/backend", "src/contracts"]
 }
