@@ -92,9 +92,10 @@ const runSql = Effect.fn("runSql")(function* (text: string) {
   };
 });
 
-// EXPLAIN ANALYZE runs the statement for real, so a DELETE would delete. The
-// read-only transaction makes Postgres refuse writes instead (SQLSTATE 25006).
-// withTransaction rolls back on an error or a cancel.
+// EXPLAIN ANALYZE runs the statement for real, so a DELETE would delete. It
+// runs in a read-only transaction that always rolls back: read-only makes
+// Postgres refuse most writes (SQLSTATE 25006), and the rollback undoes the
+// writes it still allows, like those to temporary tables.
 const explainPrefix = "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ";
 
 const explainSql = Effect.fn("explainSql")(function* (text: string) {
@@ -105,17 +106,34 @@ const explainSql = Effect.fn("explainSql")(function* (text: string) {
     });
   }
   const sql = yield* PgClient.PgClient;
-  return yield* sql
-    .withTransaction(
-      Effect.gen(function* () {
-        yield* sql`set transaction read only`;
-        return (yield* sql.unsafe(explainPrefix + text).raw) as PgConnection.Result;
-      }),
-    )
-    .pipe(
-      Effect.map(toExplainResult),
-      Effect.catch((error) => Effect.succeed(failed(explainError(toDbError(error))))),
-    );
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const conn = yield* sql.reserve;
+      // A BEGIN the user ran earlier may have left this pooled connection inside
+      // a transaction. Ours would join it, and its ROLLBACK would end theirs.
+      // now() is when the current transaction started: outside a transaction
+      // block each statement is its own transaction, so two calls differ.
+      // Text keeps the microseconds a Date would drop.
+      const transactionStart = conn
+        .executeRaw("select now()::text as start", [])
+        .pipe(Effect.map((result) => (result as PgConnection.Result).rows[0]?.["start"]));
+      const first = yield* transactionStart;
+      if (first === (yield* transactionStart)) {
+        return failed({
+          kind: "client",
+          message:
+            "A transaction you started with BEGIN is still open. Run COMMIT or ROLLBACK before Explain.",
+        });
+      }
+      // Release runs on success, failure and cancel, after sql-pg has drained a
+      // canceled query. A failed ROLLBACK is a bug, not a query error.
+      yield* Effect.acquireRelease(conn.executeRaw("begin read only", []), () =>
+        Effect.orDie(conn.executeRaw("rollback", [])),
+      );
+      const result = (yield* conn.executeRaw(explainPrefix + text, [])) as PgConnection.Result;
+      return toExplainResult(result);
+    }),
+  ).pipe(Effect.catch((error) => Effect.succeed(failed(explainError(toDbError(error))))));
 });
 
 function toExplainResult(result: PgConnection.Result): ExplainResult {

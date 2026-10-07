@@ -6,6 +6,8 @@ import type { PlanNode } from "../contracts/ipc";
 export function nodeLabel(node: PlanNode): string {
   let label = node["Node Type"];
   if (label === "Aggregate") label = aggregates[node.Strategy ?? ""] ?? label;
+  // INSERT / UPDATE / DELETE / MERGE: psql prints "Insert on film".
+  if (label === "ModifyTable" && typeof node["Operation"] === "string") label = node["Operation"];
   // Parallel plans split an aggregate in two: Partial per worker, Finalize after.
   if (node["Partial Mode"] && node["Partial Mode"] !== "Simple") {
     label = `${node["Partial Mode"]} ${label}`;
