@@ -25,11 +25,11 @@ open table → explore data → write SQL → see plan → understand the decisi
 
 ## Roadmap
 
-| Milestone | Scope |
-|---|---|
+| Milestone  | Scope                                                                     |
+| ---------- | ------------------------------------------------------------------------- |
 | v0.1 (MVP) | SQL Editor, Plan Explorer, Node Inspector, Estimated vs Actual, Safe mode |
-| v0.2 | Plan Compare |
-| Later | Database Explorer, Table Viewer |
+| v0.2       | Plan Compare                                                              |
+| Later      | Database Explorer, Table Viewer                                           |
 
 ## Development
 
@@ -54,6 +54,8 @@ Run the app (Node 24 and pnpm):
 pnpm install
 pnpm dev        # opens the Electron window; the renderer is also at http://localhost:5173
 pnpm typecheck
+pnpm lint       # oxlint
+pnpm format     # oxfmt; CI runs `pnpm format --check`
 pnpm build
 ```
 

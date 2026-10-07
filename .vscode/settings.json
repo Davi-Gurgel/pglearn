@@ -1,4 +1,7 @@
 {
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "oxc.oxc-vscode",
+  "oxc.disableNestedConfig": true,
   "typescript.preferences.autoImportFileExcludePatterns": [".repos/**"],
   "javascript.preferences.autoImportFileExcludePatterns": [".repos/**"],
   "files.watcherExclude": {
