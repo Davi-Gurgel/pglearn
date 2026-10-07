@@ -9,6 +9,7 @@ const desktopBridge: DesktopBridge = {
   },
   ping: () => ipcRenderer.invoke("db:ping"),
   query: (sql) => ipcRenderer.invoke("db:query", sql),
+  explain: (sql) => ipcRenderer.invoke("db:explain", sql),
   cancel: () => ipcRenderer.invoke("db:cancel"),
 };
 

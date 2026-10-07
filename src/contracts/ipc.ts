@@ -4,6 +4,8 @@ export interface DesktopBridge {
   versions: { electron: string; chrome: string; node: string };
   ping(): Promise<PingResult>;
   query(sql: string): Promise<QueryResult>;
+  // Runs the statement under EXPLAIN ANALYZE, so it really executes.
+  explain(sql: string): Promise<ExplainResult>;
   // Stops the running query, if any. Its `query` call then resolves as canceled.
   cancel(): Promise<void>;
 }
@@ -25,6 +27,48 @@ export type QueryResult =
       rows: (string | null)[][];
     }
   | { ok: false; error: DbError };
+
+export type ExplainResult = { ok: true; plan: Explain } | { ok: false; error: DbError };
+
+// What `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` returns, keeping Postgres's own
+// key names so they match the docs. Only the keys the app reads are listed;
+// Postgres sends many more, depending on the node type.
+export interface Explain {
+  Plan: PlanNode;
+  "Planning Time": number;
+  Triggers: { "Trigger Name": string; Relation?: string; Time: number; Calls: number }[];
+  "Execution Time": number;
+}
+
+export interface PlanNode {
+  "Node Type": string;
+  // How this node feeds its parent: Outer, Inner, Member, InitPlan, SubPlan.
+  "Parent Relationship"?: string;
+  // "InitPlan 1", "SubPlan 1", "CTE x": printed above the node, like psql does.
+  "Subplan Name"?: string;
+  "Parallel Aware": boolean;
+  "Join Type"?: string;
+  Strategy?: string;
+  "Partial Mode"?: string;
+  "Scan Direction"?: string;
+  "Relation Name"?: string;
+  "CTE Name"?: string;
+  "Function Name"?: string;
+  Alias?: string;
+  "Index Name"?: string;
+  "Startup Cost": number;
+  "Total Cost": number;
+  "Plan Rows": number;
+  "Plan Width": number;
+  "Actual Startup Time": number;
+  "Actual Total Time": number;
+  // Per loop, and fractional since Postgres 18 (an average over the loops).
+  "Actual Rows": number;
+  // 0 means the node never ran.
+  "Actual Loops": number;
+  Plans?: PlanNode[];
+  [detail: string]: unknown;
+}
 
 export type DbError =
   // Reported by the Postgres server, also while connecting (28P01: wrong

@@ -11,7 +11,7 @@ import {
   Semaphore,
 } from "effect";
 import { SqlError } from "effect/sql/SqlError";
-import type { DbError, PingResult, QueryResult } from "../contracts/ipc";
+import type { DbError, Explain, ExplainResult, PingResult, QueryResult } from "../contracts/ipc";
 import { toText } from "./query-cell";
 
 // The local database from compose.yaml. Set DATABASE_URL to use another one.
@@ -92,6 +92,56 @@ const runSql = Effect.fn("runSql")(function* (text: string) {
   };
 });
 
+// EXPLAIN ANALYZE runs the statement for real, so a DELETE would delete. The
+// read-only transaction makes Postgres refuse writes instead (SQLSTATE 25006).
+// withTransaction rolls back on an error or a cancel.
+const explainPrefix = "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ";
+
+const explainSql = Effect.fn("explainSql")(function* (text: string) {
+  if (/^\s*explain\b/i.test(text)) {
+    return failed({
+      kind: "client",
+      message: "Remove EXPLAIN from the query: the Explain button adds it.",
+    });
+  }
+  const sql = yield* PgClient.PgClient;
+  return yield* sql
+    .withTransaction(
+      Effect.gen(function* () {
+        yield* sql`set transaction read only`;
+        return (yield* sql.unsafe(explainPrefix + text).raw) as PgConnection.Result;
+      }),
+    )
+    .pipe(
+      Effect.map(toExplainResult),
+      Effect.catch((error) => Effect.succeed(failed(explainError(toDbError(error))))),
+    );
+});
+
+function toExplainResult(result: PgConnection.Result): ExplainResult {
+  // A json column arrives parsed: one row, holding a one-element array.
+  const [plan] = (result.rows[0]?.["QUERY PLAN"] ?? []) as unknown[];
+  if (typeof plan !== "object" || plan === null || !("Plan" in plan)) {
+    return failed({ kind: "client", message: "Postgres returned no plan." });
+  }
+  return { ok: true, plan: plan as Explain };
+}
+
+// Errors point into the SQL that ran, which starts with our prefix. Shift the
+// position back into the user's text, or drop it if it falls in the prefix.
+function explainError(error: DbError): DbError {
+  if (error.kind !== "postgres") return error;
+  const position =
+    error.position === undefined || error.position <= explainPrefix.length
+      ? undefined
+      : error.position - explainPrefix.length;
+  const hint =
+    error.code === "25006"
+      ? "Explain runs the statement for real (EXPLAIN ANALYZE), so it only allows statements that do not change data."
+      : error.hint;
+  return { ...error, position, hint };
+}
+
 // The app gives up on a query after this long. Interrupting the fiber makes
 // sql-pg ask Postgres to stop it, the same way the Cancel button does.
 const timeoutSeconds = 30;
@@ -103,14 +153,24 @@ const queryPermit = Semaphore.makeUnsafe(1);
 // The editor runs one query at a time, so cancel needs no query id.
 let running: AbortController | undefined;
 
-export async function queryDatabase(text: string): Promise<QueryResult> {
+export function queryDatabase(text: string): Promise<QueryResult> {
+  return runCancelable(runSql(text));
+}
+
+export function explainDatabase(text: string): Promise<ExplainResult> {
+  return runCancelable(explainSql(text));
+}
+
+async function runCancelable<A>(
+  effect: Effect.Effect<A, SqlError | Error, PgClient.PgClient>,
+): Promise<A | Failed> {
   // A query still running here belongs to a page that is gone (a reload).
   running?.abort();
   const controller = new AbortController();
   running = controller;
 
   const exit = await runtime.runPromiseExit(
-    runSql(text).pipe(
+    effect.pipe(
       Effect.timeoutOrElse({
         duration: `${timeoutSeconds} seconds`,
         orElse: () => Effect.succeed(failed({ kind: "timeout", seconds: timeoutSeconds })),
@@ -145,8 +205,10 @@ export function pingDatabase(): Promise<PingResult> {
   );
 }
 
-function failed(error: DbError) {
-  return { ok: false as const, error };
+type Failed = { ok: false; error: DbError };
+
+function failed(error: DbError): Failed {
+  return { ok: false, error };
 }
 
 // A SqlError's own message is generic ("PgConnection: Query failed"). Its cause
