@@ -28,7 +28,15 @@ export function App() {
         disabled={ping === "pending"}
         onClick={() => {
           setPing("pending");
-          void bridge.ping().then(setPing);
+          void bridge
+            .ping()
+            .then(setPing)
+            .catch((error: unknown) => {
+              setPing({
+                ok: false,
+                message: error instanceof Error ? error.message : String(error),
+              });
+            });
         }}
       >
         Ping database
@@ -55,7 +63,15 @@ export function App() {
         disabled={result === "pending"}
         onClick={() => {
           setResult("pending");
-          void bridge.query(sql).then(setResult);
+          void bridge
+            .query(sql)
+            .then(setResult)
+            .catch((error: unknown) => {
+              setResult({
+                ok: false,
+                message: error instanceof Error ? error.message : String(error),
+              });
+            });
         }}
       >
         Run

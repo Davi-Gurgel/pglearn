@@ -1,6 +1,7 @@
 import { PgClient, type PgConnection } from "@effect/sql-pg";
 import { Config, Effect, ManagedRuntime, Redacted } from "effect";
 import type { PingResult, QueryResult } from "../contracts/ipc";
+import { toText } from "./query-cell";
 
 // The local database from compose.yaml. Set DATABASE_URL to use another one.
 const defaultUrl = "postgres://postgres:postgres@localhost:5432/pagila";
@@ -42,17 +43,6 @@ const typeNames = Effect.fnUntraced(function* (fields: ReadonlyArray<PgConnectio
   return new Map(rows.map((row) => [row.oid, row.typname]));
 });
 
-// sql-pg decodes values into JS types (Date, bigint, arrays, objects). The
-// renderer only gets text, so it never has to know about column types.
-function toText(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
-  if (value instanceof Date) return value.toISOString();
-  if (typeof value === "object") {
-    return JSON.stringify(value, (_, v) => (typeof v === "bigint" ? String(v) : v));
-  }
-  return String(value);
-}
-
 const runSql = Effect.fn("runSql")(function* (text: string) {
   const sql = yield* PgClient.PgClient;
   // `.raw` is typed `unknown`; for sql-pg it is the driver's whole result.
@@ -70,6 +60,13 @@ const runSql = Effect.fn("runSql")(function* (text: string) {
   }
 
   const types = yield* typeNames(result.fields);
+  const rows = yield* Effect.try({
+    try: () =>
+      result.rows
+        .slice(0, shownRows)
+        .map((row) => result.fields.map((field) => toText(row[field.name]))),
+    catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+  });
   return {
     ok: true as const,
     command: result.command,
@@ -80,9 +77,7 @@ const runSql = Effect.fn("runSql")(function* (text: string) {
       name: field.name,
       type: types.get(field.dataTypeId) ?? String(field.dataTypeId),
     })),
-    rows: result.rows
-      .slice(0, shownRows)
-      .map((row) => result.fields.map((field) => toText(row[field.name]))),
+    rows,
   };
 });
 
