@@ -1,6 +1,19 @@
-import { useState } from "react";
-import type { DbError, PingResult, QueryResult } from "../contracts/ipc";
+import { Fragment, useState } from "react";
+import type {
+  DbError,
+  Explain,
+  ExplainResult,
+  PingResult,
+  PlanNode,
+  QueryResult,
+} from "../contracts/ipc";
+import { nodeDetails, nodeLabel, nodeNumbers } from "./plan";
 import { sqlstateClass, sqlstateDocs } from "./sqlstate";
+
+// What the last Run or Explain returned, with the SQL that produced it.
+type Outcome =
+  | { sql: string; kind: "query"; result: QueryResult }
+  | { sql: string; kind: "explain"; result: ExplainResult };
 
 export function App() {
   const bridge = window.desktopBridge;
@@ -8,9 +21,7 @@ export function App() {
   const [sql, setSql] = useState("select * from film limit 10");
   // The SQL is kept with its result: an error position points into the text
   // that ran, which may no longer be what the editor shows.
-  const [result, setResult] = useState<{ sql: string; result: QueryResult } | "pending" | null>(
-    null,
-  );
+  const [result, setResult] = useState<Outcome | "pending" | null>(null);
   const [canceling, setCanceling] = useState(false);
 
   if (!bridge) {
@@ -53,7 +64,6 @@ export function App() {
         </p>
       )}
       {ping !== null && ping !== "pending" && !ping.ok && <ErrorReport error={ping.error} sql="" />}
-
       <h2>Query</h2>
       <textarea
         value={sql}
@@ -70,10 +80,23 @@ export function App() {
           void bridge
             .query(sql)
             .catch((error: unknown): QueryResult => ({ ok: false, error: unexpected(error) }))
-            .then((result) => setResult({ sql, result }));
+            .then((result) => setResult({ sql, kind: "query", result }));
         }}
       >
         Run
+      </button>{" "}
+      <button
+        disabled={result === "pending"}
+        onClick={() => {
+          setResult("pending");
+          setCanceling(false);
+          void bridge
+            .explain(sql)
+            .catch((error: unknown): ExplainResult => ({ ok: false, error: unexpected(error) }))
+            .then((result) => setResult({ sql, kind: "explain", result }));
+        }}
+      >
+        Explain
       </button>
       {result === "pending" && (
         <p>
@@ -92,8 +115,11 @@ export function App() {
       {result !== null && result !== "pending" && !result.result.ok && (
         <ErrorReport error={result.result.error} sql={result.sql} />
       )}
-      {result !== null && result !== "pending" && result.result.ok && (
+      {result !== null && result !== "pending" && result.kind === "query" && result.result.ok && (
         <Results result={result.result} />
+      )}
+      {result !== null && result !== "pending" && result.kind === "explain" && result.result.ok && (
+        <Plan explain={result.result.plan} />
       )}
     </main>
   );
@@ -136,6 +162,48 @@ function Results({ result }: { result: Extract<QueryResult, { ok: true }> }) {
           ))}
         </tbody>
       </table>
+    </>
+  );
+}
+
+// Indented like psql's text output: each child one level deeper, under "->".
+function Plan({ explain }: { explain: Explain }) {
+  return (
+    <pre>
+      <PlanTree node={explain.Plan} />
+      {`Planning Time: ${explain["Planning Time"].toFixed(3)} ms\n`}
+      {explain.Triggers.map(
+        (trigger) =>
+          `Trigger ${trigger["Trigger Name"]}: time=${trigger.Time.toFixed(3)} calls=${trigger.Calls}\n`,
+      )}
+      {`Execution Time: ${explain["Execution Time"].toFixed(3)} ms`}
+    </pre>
+  );
+}
+
+// One element per node, so a later milestone can make nodes clickable. `arrow`
+// is the column of this node's "->" (the root has none); its detail lines and
+// children line up two columns past the arrow's tip.
+function PlanTree({ node, arrow }: { node: PlanNode; arrow?: number }) {
+  const head = arrow === undefined ? "" : `${" ".repeat(arrow)}->  `;
+  const inner = " ".repeat(head.length + 2);
+  return (
+    <>
+      <span>
+        {`${head}${nodeLabel(node)}  ${nodeNumbers(node)}\n`}
+        {nodeDetails(node).map((line) => `${inner}${line}\n`)}
+      </span>
+      {node.Plans?.map((child, i) =>
+        // InitPlans, SubPlans and CTEs get a name line, and sit under it.
+        child["Subplan Name"] ? (
+          <Fragment key={i}>
+            {`${inner}${child["Subplan Name"]}\n`}
+            <PlanTree node={child} arrow={inner.length + 2} />
+          </Fragment>
+        ) : (
+          <PlanTree key={i} node={child} arrow={inner.length} />
+        ),
+      )}
     </>
   );
 }

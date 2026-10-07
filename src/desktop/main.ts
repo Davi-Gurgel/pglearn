@@ -1,6 +1,12 @@
 import { join } from "node:path";
 import { app, BrowserWindow, ipcMain, shell } from "electron";
-import { cancelQuery, closeDatabase, pingDatabase, queryDatabase } from "../backend/database";
+import {
+  cancelQuery,
+  closeDatabase,
+  explainDatabase,
+  pingDatabase,
+  queryDatabase,
+} from "../backend/database";
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -42,6 +48,7 @@ function openExternal(url: string): void {
 
 ipcMain.handle("db:ping", () => pingDatabase());
 ipcMain.handle("db:query", (_event, sql: string) => queryDatabase(sql));
+ipcMain.handle("db:explain", (_event, sql: string) => explainDatabase(sql));
 ipcMain.handle("db:cancel", () => cancelQuery());
 
 void app.whenReady().then(() => {
