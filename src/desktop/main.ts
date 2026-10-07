@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import { app, BrowserWindow, ipcMain } from "electron";
-import { closeDatabase, pingDatabase, queryDatabase } from "../backend/database";
+import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { cancelQuery, closeDatabase, pingDatabase, queryDatabase } from "../backend/database";
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -13,6 +13,19 @@ function createWindow(): void {
     },
   });
 
+  // Links (like the Postgres docs) open in the default browser. Left alone, a
+  // link would replace the app in this window, or open a bare Electron window.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    openExternal(url);
+    return { action: "deny" };
+  });
+  // Same-origin navigations are the app itself (Vite's full reload in dev).
+  window.webContents.on("will-navigate", (event, url) => {
+    if (new URL(url).origin === new URL(window.webContents.getURL()).origin) return;
+    event.preventDefault();
+    openExternal(url);
+  });
+
   // In dev, electron-vite serves the renderer from a Vite dev server. A packaged
   // app ignores the variable, so nobody can point it at another URL.
   const devServerUrl = process.env["ELECTRON_RENDERER_URL"];
@@ -23,8 +36,13 @@ function createWindow(): void {
   }
 }
 
+function openExternal(url: string): void {
+  if (url.startsWith("https://")) void shell.openExternal(url);
+}
+
 ipcMain.handle("db:ping", () => pingDatabase());
 ipcMain.handle("db:query", (_event, sql: string) => queryDatabase(sql));
+ipcMain.handle("db:cancel", () => cancelQuery());
 
 void app.whenReady().then(() => {
   createWindow();
