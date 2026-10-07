@@ -1,5 +1,15 @@
 import { PgClient, type PgConnection } from "@effect/sql-pg";
-import { Cause, Config, Effect, Exit, ManagedRuntime, Redacted } from "effect";
+import {
+  Cause,
+  Config,
+  Effect,
+  Exit,
+  ManagedRuntime,
+  Option,
+  Redacted,
+  Schema,
+  Semaphore,
+} from "effect";
 import { SqlError } from "effect/sql/SqlError";
 import type { DbError, PingResult, QueryResult } from "../contracts/ipc";
 import { toText } from "./query-cell";
@@ -86,6 +96,10 @@ const runSql = Effect.fn("runSql")(function* (text: string) {
 // sql-pg ask Postgres to stop it, the same way the Cancel button does.
 const timeoutSeconds = 30;
 
+// Keep the permit until sql-pg finishes draining a canceled query, so a
+// replacement cannot start while the old statement is still running.
+const queryPermit = Semaphore.makeUnsafe(1);
+
 // The editor runs one query at a time, so cancel needs no query id.
 let running: AbortController | undefined;
 
@@ -102,6 +116,7 @@ export async function queryDatabase(text: string): Promise<QueryResult> {
         orElse: () => Effect.succeed(failed({ kind: "timeout", seconds: timeoutSeconds })),
       }),
       Effect.catch((error) => Effect.succeed(failed(toDbError(error)))),
+      queryPermit.withPermit,
     ),
     // Aborting interrupts the fiber. sql-pg then sends Postgres a CancelRequest
     // and waits for the server to confirm before the fiber finishes.
@@ -137,11 +152,24 @@ function failed(error: DbError) {
 // A SqlError's own message is generic ("PgConnection: Query failed"). Its cause
 // says what actually happened: the fields of Postgres's error report, or a Node
 // socket error (ECONNREFUSED: nothing listening on that port).
+const decodeSqlErrorCause = Schema.decodeUnknownOption(
+  Schema.Struct({
+    message: Schema.optionalKey(Schema.String),
+    code: Schema.optionalKey(Schema.String),
+    severity: Schema.optionalKey(Schema.String),
+    detail: Schema.optionalKey(Schema.String),
+    hint: Schema.optionalKey(Schema.String),
+    position: Schema.optionalKey(
+      Schema.NumberFromString.pipe(Schema.check(Schema.isInt(), Schema.isGreaterThan(0))),
+    ),
+  }),
+);
+
 function toDbError(error: SqlError | Error): DbError {
   if (!(error instanceof SqlError)) return { kind: "client", message: error.message };
-  const cause = error.reason.cause as (Error & Partial<Record<string, string>>) | undefined;
+  const cause = Option.getOrUndefined(decodeSqlErrorCause(error.reason.cause));
   // Every Postgres report has a severity; Node errors have codes too, but not this.
-  if (cause?.severity === undefined || cause.code === undefined) {
+  if (cause?.severity === undefined || cause.code === undefined || cause.message === undefined) {
     // ECONNREFUSED comes with an empty message: keep the driver's own words too.
     const message = cause?.message || [error.message, cause?.code].filter(Boolean).join(": ");
     return { kind: "client", message };
@@ -152,7 +180,7 @@ function toDbError(error: SqlError | Error): DbError {
     message: cause.message,
     detail: cause.detail,
     hint: cause.hint ?? hintFor(cause.message),
-    position: cause.position === undefined ? undefined : Number(cause.position),
+    position: cause.position,
   };
 }
 
@@ -167,8 +195,7 @@ function hintFor(message: string): string | undefined {
 }
 
 export function closeDatabase(): Promise<void> {
-  // The pool closes only once every connection is back, and a query fiber does
-  // not belong to the runtime: cancel it rather than wait for it to finish.
-  cancelQuery();
+  // dispose interrupts the runtime's fibers and waits for their cleanup before
+  // releasing the pool, including queries waiting for the permit.
   return runtime.dispose();
 }
