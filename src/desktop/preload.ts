@@ -9,6 +9,7 @@ const desktopBridge: DesktopBridge = {
   },
   ping: () => ipcRenderer.invoke("db:ping"),
   query: (sql) => ipcRenderer.invoke("db:query", sql),
+  cancel: () => ipcRenderer.invoke("db:cancel"),
 };
 
 // The preload runs before the page, with access to Node and Electron, but the

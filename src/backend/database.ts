@@ -1,6 +1,17 @@
 import { PgClient, type PgConnection } from "@effect/sql-pg";
-import { Config, Effect, ManagedRuntime, Redacted } from "effect";
-import type { PingResult, QueryResult } from "../contracts/ipc";
+import {
+  Cause,
+  Config,
+  Effect,
+  Exit,
+  ManagedRuntime,
+  Option,
+  Redacted,
+  Schema,
+  Semaphore,
+} from "effect";
+import { SqlError } from "effect/sql/SqlError";
+import type { DbError, PingResult, QueryResult } from "../contracts/ipc";
 import { toText } from "./query-cell";
 
 // The local database from compose.yaml. Set DATABASE_URL to use another one.
@@ -53,10 +64,10 @@ const runSql = Effect.fn("runSql")(function* (text: string) {
   const names = result.fields.map((field) => field.name);
   const repeated = [...new Set(names.filter((name, i) => names.indexOf(name) !== i))];
   if (repeated.length > 0) {
-    return {
-      ok: false as const,
+    return failed({
+      kind: "client",
       message: `Repeated column names (${repeated.join(", ")}). Rename them with AS.`,
-    };
+    });
   }
 
   const types = yield* typeNames(result.fields);
@@ -81,12 +92,47 @@ const runSql = Effect.fn("runSql")(function* (text: string) {
   };
 });
 
-export function queryDatabase(text: string): Promise<QueryResult> {
-  return runtime.runPromise(
+// The app gives up on a query after this long. Interrupting the fiber makes
+// sql-pg ask Postgres to stop it, the same way the Cancel button does.
+const timeoutSeconds = 30;
+
+// Keep the permit until sql-pg finishes draining a canceled query, so a
+// replacement cannot start while the old statement is still running.
+const queryPermit = Semaphore.makeUnsafe(1);
+
+// The editor runs one query at a time, so cancel needs no query id.
+let running: AbortController | undefined;
+
+export async function queryDatabase(text: string): Promise<QueryResult> {
+  // A query still running here belongs to a page that is gone (a reload).
+  running?.abort();
+  const controller = new AbortController();
+  running = controller;
+
+  const exit = await runtime.runPromiseExit(
     runSql(text).pipe(
-      Effect.catch((error) => Effect.succeed({ ok: false as const, message: describe(error) })),
+      Effect.timeoutOrElse({
+        duration: `${timeoutSeconds} seconds`,
+        orElse: () => Effect.succeed(failed({ kind: "timeout", seconds: timeoutSeconds })),
+      }),
+      Effect.catch((error) => Effect.succeed(failed(toDbError(error)))),
+      queryPermit.withPermit,
     ),
+    // Aborting interrupts the fiber. sql-pg then sends Postgres a CancelRequest
+    // and waits for the server to confirm before the fiber finishes.
+    { signal: controller.signal },
   );
+  if (running === controller) running = undefined;
+
+  if (Exit.isSuccess(exit)) return exit.value;
+  // Interrupted means canceled, even if the cleanup after it also failed.
+  if (Cause.hasInterrupts(exit.cause)) return failed({ kind: "canceled" });
+  // A defect: a bug here, not a problem with the query.
+  throw Cause.squash(exit.cause);
+}
+
+export function cancelQuery(): void {
+  running?.abort();
 }
 
 // IPC can only carry plain data, so errors become a value instead of a rejection.
@@ -94,19 +140,62 @@ export function pingDatabase(): Promise<PingResult> {
   return runtime.runPromise(
     ping.pipe(
       Effect.map((row) => ({ ok: true as const, ...row })),
-      Effect.catch((error) => Effect.succeed({ ok: false as const, message: describe(error) })),
+      Effect.catch((error) => Effect.succeed(failed(toDbError(error)))),
     ),
   );
 }
 
-// A SqlError's own message is generic ("Failed to connect"). Its cause says what
-// actually happened: Postgres's words ("password authentication failed for user
-// ...") or a Node socket code (ECONNREFUSED: nothing listening on that port).
-function describe(error: { message: string; reason?: { cause?: unknown } }): string {
-  const cause = error.reason?.cause as (Error & { code?: string }) | undefined;
-  return cause?.message || cause?.code || error.message;
+function failed(error: DbError) {
+  return { ok: false as const, error };
+}
+
+// A SqlError's own message is generic ("PgConnection: Query failed"). Its cause
+// says what actually happened: the fields of Postgres's error report, or a Node
+// socket error (ECONNREFUSED: nothing listening on that port).
+const decodeSqlErrorCause = Schema.decodeUnknownOption(
+  Schema.Struct({
+    message: Schema.optionalKey(Schema.String),
+    code: Schema.optionalKey(Schema.String),
+    severity: Schema.optionalKey(Schema.String),
+    detail: Schema.optionalKey(Schema.String),
+    hint: Schema.optionalKey(Schema.String),
+    position: Schema.optionalKey(
+      Schema.NumberFromString.pipe(Schema.check(Schema.isInt(), Schema.isGreaterThan(0))),
+    ),
+  }),
+);
+
+function toDbError(error: SqlError | Error): DbError {
+  if (!(error instanceof SqlError)) return { kind: "client", message: error.message };
+  const cause = Option.getOrUndefined(decodeSqlErrorCause(error.reason.cause));
+  // Every Postgres report has a severity; Node errors have codes too, but not this.
+  if (cause?.severity === undefined || cause.code === undefined || cause.message === undefined) {
+    // ECONNREFUSED comes with an empty message: keep the driver's own words too.
+    const message = cause?.message || [error.message, cause?.code].filter(Boolean).join(": ");
+    return { kind: "client", message };
+  }
+  return {
+    kind: "postgres",
+    code: cause.code,
+    message: cause.message,
+    detail: cause.detail,
+    hint: cause.hint ?? hintFor(cause.message),
+    position: cause.position,
+  };
+}
+
+// sql-pg runs every query as a prepared statement (Postgres's extended
+// protocol), and a prepared statement holds exactly one command. Matching the
+// text assumes the server reports in English (its lc_messages setting).
+function hintFor(message: string): string | undefined {
+  if (message.startsWith("cannot insert multiple commands into a prepared statement")) {
+    return "pglearn runs one statement at a time. Remove the extra statements and run them separately.";
+  }
+  return undefined;
 }
 
 export function closeDatabase(): Promise<void> {
+  // dispose interrupts the runtime's fibers and waits for their cleanup before
+  // releasing the pool, including queries waiting for the permit.
   return runtime.dispose();
 }
