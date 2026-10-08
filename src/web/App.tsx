@@ -7,7 +7,15 @@ import type {
   PlanNode,
   QueryResult,
 } from "../contracts/ipc";
-import { dividedAmongProcesses, nodeDetails, nodeLabel, nodeNumbers, rowsComparison } from "./plan";
+import { explainDocs, nodeExplanation, nodeNotes, type Explanation } from "./explanations";
+import {
+  ancestors,
+  dividedAmongProcesses,
+  nodeDetails,
+  nodeLabel,
+  nodeNumbers,
+  rowsComparison,
+} from "./plan";
 import { sqlstateClass, sqlstateDocs } from "./sqlstate";
 
 // What the last Run or Explain returned, with the SQL that produced it.
@@ -171,6 +179,7 @@ function Results({ result }: { result: Extract<QueryResult, { ok: true }> }) {
 function Plan({ explain }: { explain: Explain }) {
   const [selected, setSelected] = useState<PlanNode | null>(null);
   const divided = useMemo(() => dividedAmongProcesses(explain.Plan), [explain]);
+  const above = useMemo(() => ancestors(explain.Plan), [explain]);
   return (
     <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
       <pre style={{ flex: "1 1 0", minWidth: 0, overflowX: "auto" }}>
@@ -184,9 +193,13 @@ function Plan({ explain }: { explain: Explain }) {
       </pre>
       <aside style={{ flex: "0 0 24rem", position: "sticky", top: 0 }}>
         {selected ? (
-          <NodeStats node={selected} divided={divided.has(selected)} />
+          <NodeStats
+            node={selected}
+            divided={divided.has(selected)}
+            ancestors={above.get(selected) ?? []}
+          />
         ) : (
-          <p>Click a node to compare its rows.</p>
+          <p>Click a node to see what it does and compare its rows.</p>
         )}
       </aside>
     </div>
@@ -261,12 +274,22 @@ function PlanTree({
 const plural = (n: number, word: string) =>
   `${n.toLocaleString("en-US")} ${word}${n === 1 ? "" : "s"}`;
 
-function NodeStats({ node, divided }: { node: PlanNode; divided: boolean }) {
+function NodeStats({
+  node,
+  divided,
+  ancestors,
+}: {
+  node: PlanNode;
+  divided: boolean;
+  ancestors: PlanNode[];
+}) {
   const rows = rowsComparison(node, divided);
   const table = node["Relation Name"];
   return (
     <div>
       <h3>{nodeLabel(node)}</h3>
+      <NodeExplanation node={node} ancestors={ancestors} />
+      <h4>Estimated vs actual rows</h4>
       {!rows.executed ? (
         <p>
           Never executed: Postgres planned this node but the query finished without needing it (for
@@ -354,6 +377,42 @@ function NodeStats({ node, divided }: { node: PlanNode; divided: boolean }) {
 }
 
 const statsDocs = "https://www.postgresql.org/docs/current/planner-stats.html";
+
+function NodeExplanation({ node, ancestors }: { node: PlanNode; ancestors: PlanNode[] }) {
+  const explanation = nodeExplanation(node);
+  const notes = nodeNotes(node, ancestors);
+  return (
+    <>
+      {explanation ? (
+        <Paragraph explanation={explanation} />
+      ) : (
+        <p>
+          No explanation written for {node["Node Type"]} yet.{" "}
+          <a href={explainDocs} target="_blank" rel="noreferrer">
+            Using EXPLAIN
+          </a>
+        </p>
+      )}
+      {notes.map((note) => (
+        <Paragraph key={note.text} explanation={note} />
+      ))}
+    </>
+  );
+}
+
+// `backticks` in the text become <code>: the odd pieces of the split.
+function Paragraph({ explanation }: { explanation: Explanation }) {
+  return (
+    <p>
+      {explanation.text
+        .split("`")
+        .map((piece, i) => (i % 2 ? <code key={i}>{piece}</code> : piece))}{" "}
+      <a href={explanation.docs} target="_blank" rel="noreferrer">
+        Docs
+      </a>
+    </p>
+  );
+}
 
 function unexpected(error: unknown): DbError {
   return { kind: "client", message: error instanceof Error ? error.message : String(error) };

@@ -6,6 +6,7 @@ import type { PlanNode } from "../contracts/ipc";
 export function nodeLabel(node: PlanNode): string {
   let label = node["Node Type"];
   if (label === "Aggregate") label = aggregates[node.Strategy ?? ""] ?? label;
+  if (label === "SetOp" && node.Strategy === "Hashed") label = "HashSetOp";
   // INSERT / UPDATE / DELETE / MERGE: psql prints "Insert on film".
   if (label === "ModifyTable" && typeof node["Operation"] === "string") label = node["Operation"];
   // Parallel plans split an aggregate in two: Partial per worker, Finalize after.
@@ -15,6 +16,8 @@ export function nodeLabel(node: PlanNode): string {
   if (node["Join Type"] && node["Join Type"] !== "Inner") {
     label = `${label.replace(/ Join$/, "")} ${node["Join Type"]} Join`;
   }
+  // INTERSECT / EXCEPT: psql prints "HashSetOp Except All".
+  if (typeof node["Command"] === "string") label += ` ${node["Command"]}`;
   if (node["Parallel Aware"]) label = `Parallel ${label}`;
   if (node["Scan Direction"] === "Backward") label += " Backward";
   // A Bitmap Index Scan reads only the index, so the index is what it is "on".
@@ -113,6 +116,18 @@ export function dividedAmongProcesses(root: PlanNode): Set<PlanNode> {
   };
   visit(root, false);
   return divided;
+}
+
+// Each node's ancestors, nearest first: what a node means can depend on what
+// sits above it (a Gather, an Append).
+export function ancestors(root: PlanNode): Map<PlanNode, PlanNode[]> {
+  const map = new Map<PlanNode, PlanNode[]>();
+  const visit = (node: PlanNode, above: PlanNode[]) => {
+    map.set(node, above);
+    for (const child of node.Plans ?? []) visit(child, [node, ...above]);
+  };
+  visit(root, []);
+  return map;
 }
 
 // Lines shown under a node, in psql's order. Every other key is left out
