@@ -17,6 +17,23 @@ export const explainDocs = docs("using-explain.html#USING-EXPLAIN-BASICS");
 const joinDocs = docs("planner-optimizer.html");
 const workMemDocs = docs("runtime-config-resource.html#GUC-WORK-MEM");
 const parallelDocs = docs("how-parallel-query-works.html");
+const explainAnalyzeDocs = docs("using-explain.html#USING-EXPLAIN-ANALYZE");
+
+// Shown above every plan: EXPLAIN ANALYZE runs the statement, and not every
+// write shows up as an Insert / Update / Delete node (CREATE TABLE AS shows
+// only its SELECT; a function called by a SELECT can write too).
+export function rolledBack(changesRows: boolean): Explanation {
+  return {
+    text: `Explain ran this statement for real, in a transaction that it then rolled back (\`ROLLBACK\`), so ${changesRows ? "the rows it changed are back as they were" : "anything it wrote, like the table of a `CREATE TABLE AS` or rows changed by a function it called, is undone"}. Two things a rollback does not undo: sequence values it took with \`nextval()\`, like a new \`serial\` id, are not given back (sequences skip rolled-back values so concurrent inserts never wait for each other), and any row versions it wrote stay in the table as dead rows until \`VACUUM\` removes them.`,
+    docs: docs("tutorial-transactions.html"),
+  };
+}
+
+// Shown under the trigger lines of a plan.
+export const triggersRan: Explanation = {
+  text: "Triggers ran too. A `BEFORE` trigger's time is part of the Insert, Update or Delete node; `AFTER` triggers run once the whole plan has finished, so their time is only in Execution Time. Each `Trigger for constraint` is a foreign key check, an `AFTER` trigger called for each changed row: inserting checks that the referenced row exists, and deleting or changing a referenced row searches the tables that refer to it, slowly if their foreign key column has no index.",
+  docs: explainAnalyzeDocs,
+};
 
 // Keyed by "Node Type". Aggregate and SetOp each hide two or more algorithms,
 // told apart by "Strategy", so they are keyed by both.
@@ -189,6 +206,10 @@ const explanations: Record<string, Explanation> = {
     text: "Like Gather, but each worker's rows are sorted and it merges them keeping the order.",
     docs: parallelDocs,
   },
+  ModifyTable: {
+    text: "Changes the table in its label (`Insert on`, `Update on`, `Delete on`, `Merge on`) with the rows the node below produces: the new rows for an INSERT, otherwise the rows to change or delete. Postgres never changes a row in place: an UPDATE writes a new version of the row and marks the old one dead, a DELETE only marks it, so transactions that started earlier can still read the old version (MVCC). Without `RETURNING` it passes no rows up, so its rows are 0: the rows below are the ones it was given to change. A MERGE counts what its `WHEN` clauses did on the `Tuples` line.",
+    docs: explainAnalyzeDocs,
+  },
 };
 
 // The explanation for the node's algorithm, or undefined if not written yet.
@@ -249,6 +270,13 @@ export function nodeNotes(node: PlanNode, ancestors: PlanNode[]): Explanation[] 
         " There is one per partition (partitionwise aggregate).",
       ),
     );
+  }
+  const conflict = node["Conflict Resolution"];
+  if (typeof conflict === "string") {
+    notes.push({
+      text: `\`ON CONFLICT DO ${conflict}\`: a row whose key is already in a unique index (\`Conflict Arbiter Indexes\`, or any unique index for \`DO NOTHING\` without a target) is ${conflict === "NOTHING" ? "skipped" : "used to update the existing row instead"}. \`Conflicting Tuples\` counts those rows, \`Tuples Inserted\` the others.`,
+      docs: docs("sql-insert.html#SQL-ON-CONFLICT"),
+    });
   }
   const spill = spilled(node);
   if (spill) notes.push({ text: spill, docs: workMemDocs });
