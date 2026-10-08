@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type {
   DbError,
   Explain,
@@ -7,7 +7,7 @@ import type {
   PlanNode,
   QueryResult,
 } from "../contracts/ipc";
-import { nodeDetails, nodeLabel, nodeNumbers } from "./plan";
+import { dividedAmongProcesses, nodeDetails, nodeLabel, nodeNumbers, rowsComparison } from "./plan";
 import { sqlstateClass, sqlstateDocs } from "./sqlstate";
 
 // What the last Run or Explain returned, with the SQL that produced it.
@@ -167,29 +167,68 @@ function Results({ result }: { result: Extract<QueryResult, { ok: true }> }) {
 }
 
 // Indented like psql's text output: each child one level deeper, under "->".
+// Click a node to see its estimated vs actual rows beside the tree.
 function Plan({ explain }: { explain: Explain }) {
+  const [selected, setSelected] = useState<PlanNode | null>(null);
+  const divided = useMemo(() => dividedAmongProcesses(explain.Plan), [explain]);
   return (
-    <pre>
-      <PlanTree node={explain.Plan} />
-      {`Planning Time: ${explain["Planning Time"].toFixed(3)} ms\n`}
-      {explain.Triggers.map(
-        (trigger) =>
-          `Trigger ${trigger["Trigger Name"]}: time=${trigger.Time.toFixed(3)} calls=${trigger.Calls}\n`,
-      )}
-      {`Execution Time: ${explain["Execution Time"].toFixed(3)} ms`}
-    </pre>
+    <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
+      <pre style={{ flex: "1 1 0", minWidth: 0, overflowX: "auto" }}>
+        <PlanTree node={explain.Plan} selected={selected} onSelect={setSelected} />
+        {`Planning Time: ${explain["Planning Time"].toFixed(3)} ms\n`}
+        {explain.Triggers.map(
+          (trigger) =>
+            `Trigger ${trigger["Trigger Name"]}: time=${trigger.Time.toFixed(3)} calls=${trigger.Calls}\n`,
+        )}
+        {`Execution Time: ${explain["Execution Time"].toFixed(3)} ms`}
+      </pre>
+      <aside style={{ flex: "0 0 24rem", position: "sticky", top: 0 }}>
+        {selected ? (
+          <NodeStats node={selected} divided={divided.has(selected)} />
+        ) : (
+          <p>Click a node to compare its rows.</p>
+        )}
+      </aside>
+    </div>
   );
 }
 
-// One element per node, so a later milestone can make nodes clickable. `arrow`
-// is the column of this node's "->" (the root has none); its detail lines and
-// children line up two columns past the arrow's tip.
-function PlanTree({ node, arrow }: { node: PlanNode; arrow?: number }) {
+// One element per node, so it can be clicked. `arrow` is the column of this
+// node's "->" (the root has none); its detail lines and children line up two
+// columns past the arrow's tip.
+function PlanTree({
+  node,
+  arrow,
+  selected,
+  onSelect,
+}: {
+  node: PlanNode;
+  arrow?: number;
+  selected: PlanNode | null;
+  onSelect: (node: PlanNode | null) => void;
+}) {
   const head = arrow === undefined ? "" : `${" ".repeat(arrow)}->  `;
   const inner = " ".repeat(head.length + 2);
+  const toggle = () => {
+    // Dragging to copy some of the plan also ends in a click: keep the selection.
+    if (window.getSelection()?.toString()) return;
+    onSelect(selected === node ? null : node);
+  };
   return (
     <>
-      <span>
+      <span
+        role="button"
+        tabIndex={0}
+        aria-pressed={selected === node}
+        onClick={toggle}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onSelect(selected === node ? null : node);
+          }
+        }}
+        style={{ cursor: "pointer", background: selected === node ? "#cde" : undefined }}
+      >
         {`${head}${nodeLabel(node)}  ${nodeNumbers(node)}\n`}
         {nodeDetails(node).map((line) => `${inner}${line}\n`)}
       </span>
@@ -198,15 +237,123 @@ function PlanTree({ node, arrow }: { node: PlanNode; arrow?: number }) {
         child["Subplan Name"] ? (
           <Fragment key={i}>
             {`${inner}${child["Subplan Name"]}\n`}
-            <PlanTree node={child} arrow={inner.length + 2} />
+            <PlanTree
+              node={child}
+              arrow={inner.length + 2}
+              selected={selected}
+              onSelect={onSelect}
+            />
           </Fragment>
         ) : (
-          <PlanTree key={i} node={child} arrow={inner.length} />
+          <PlanTree
+            key={i}
+            node={child}
+            arrow={inner.length}
+            selected={selected}
+            onSelect={onSelect}
+          />
         ),
       )}
     </>
   );
 }
+
+const plural = (n: number, word: string) =>
+  `${n.toLocaleString("en-US")} ${word}${n === 1 ? "" : "s"}`;
+
+function NodeStats({ node, divided }: { node: PlanNode; divided: boolean }) {
+  const rows = rowsComparison(node, divided);
+  const table = node["Relation Name"];
+  return (
+    <div>
+      <h3>{nodeLabel(node)}</h3>
+      {!rows.executed ? (
+        <p>
+          Never executed: Postgres planned this node but the query finished without needing it (for
+          example a Limit stopped early, or the other side of a join was empty). There is nothing to
+          compare.
+        </p>
+      ) : (
+        <>
+          <table>
+            <tbody>
+              <tr>
+                <th scope="row">Estimated</th>
+                <td>{plural(rows.estimated, "row")} per loop</td>
+              </tr>
+              <tr>
+                <th scope="row">Actual</th>
+                <td>
+                  {plural(Number(rows.actual.toFixed(2)), "row")} per loop ×{" "}
+                  {plural(rows.loops, "loop")}
+                  {rows.loops > 1 && ` ≈ ${plural(rows.total, "row")} in total`}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          {rows.verdict === "close" && <p>The estimate was close (within 2×).</p>}
+          {rows.verdict === "parallel" && (
+            <p>
+              Not comparable: Postgres splits a parallel node&apos;s estimate among the leader and
+              its workers. Compare the Gather node above instead.
+            </p>
+          )}
+          {rows.verdict === "bitmap" && (
+            <p>
+              Not comparable: this node builds a bitmap of table locations, not rows, so Postgres
+              always reports 0 actual rows. Look at its child Bitmap Index Scans.
+            </p>
+          )}
+          {(rows.verdict === "high" || rows.verdict === "low") && (
+            <>
+              <p>
+                Postgres expected{" "}
+                <strong>
+                  {rows.factor < 10
+                    ? rows.factor.toFixed(1)
+                    : Math.round(rows.factor).toLocaleString("en-US")}
+                  × {rows.verdict === "high" ? "more" : "fewer"}
+                </strong>{" "}
+                rows than it got.
+              </p>
+              {rows.verdict === "high" && (
+                <p>
+                  Not always a mistake: a node stops reading early when its parent needs no more
+                  rows (Limit, EXISTS, Merge Join, an empty join side), but the estimate assumes it
+                  reads everything.
+                </p>
+              )}
+              {rows.factor >= 10 && (
+                <p>
+                  {rows.verdict === "high"
+                    ? "If it did read everything, statistics may be stale or missing"
+                    : "A gap this large often means stale or missing statistics"}
+                  {table ? (
+                    <>
+                      : try running <code>ANALYZE</code> on <code>{table}</code> and explain again
+                    </>
+                  ) : (
+                    ", or columns that are correlated"
+                  )}
+                  .
+                </p>
+              )}
+            </>
+          )}
+        </>
+      )}
+      <p>
+        Postgres picks plans from its estimates, which come from statistics that{" "}
+        <code>ANALYZE</code> collects (autovacuum also runs it in the background).{" "}
+        <a href={statsDocs} target="_blank" rel="noreferrer">
+          Planner statistics
+        </a>
+      </p>
+    </div>
+  );
+}
+
+const statsDocs = "https://www.postgresql.org/docs/current/planner-stats.html";
 
 function unexpected(error: unknown): DbError {
   return { kind: "client", message: error instanceof Error ? error.message : String(error) };
