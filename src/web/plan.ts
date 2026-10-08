@@ -6,6 +6,7 @@ import type { PlanNode } from "../contracts/ipc";
 export function nodeLabel(node: PlanNode): string {
   let label = node["Node Type"];
   if (label === "Aggregate") label = aggregates[node.Strategy ?? ""] ?? label;
+  if (label === "SetOp" && node.Strategy === "Hashed") label = "HashSetOp";
   // INSERT / UPDATE / DELETE / MERGE: psql prints "Insert on film".
   if (label === "ModifyTable" && typeof node["Operation"] === "string") label = node["Operation"];
   // Parallel plans split an aggregate in two: Partial per worker, Finalize after.
@@ -15,6 +16,8 @@ export function nodeLabel(node: PlanNode): string {
   if (node["Join Type"] && node["Join Type"] !== "Inner") {
     label = `${label.replace(/ Join$/, "")} ${node["Join Type"]} Join`;
   }
+  // INTERSECT / EXCEPT: psql prints "HashSetOp Except All".
+  if (typeof node["Command"] === "string") label += ` ${node["Command"]}`;
   if (node["Parallel Aware"]) label = `Parallel ${label}`;
   if (node["Scan Direction"] === "Backward") label += " Backward";
   // A Bitmap Index Scan reads only the index, so the index is what it is "on".

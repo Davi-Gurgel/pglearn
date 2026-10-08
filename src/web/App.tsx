@@ -7,6 +7,7 @@ import type {
   PlanNode,
   QueryResult,
 } from "../contracts/ipc";
+import { explainDocs, nodeExplanation, nodeNotes, type Explanation } from "./explanations";
 import { dividedAmongProcesses, nodeDetails, nodeLabel, nodeNumbers, rowsComparison } from "./plan";
 import { sqlstateClass, sqlstateDocs } from "./sqlstate";
 
@@ -186,7 +187,7 @@ function Plan({ explain }: { explain: Explain }) {
         {selected ? (
           <NodeStats node={selected} divided={divided.has(selected)} />
         ) : (
-          <p>Click a node to compare its rows.</p>
+          <p>Click a node to see what it does and compare its rows.</p>
         )}
       </aside>
     </div>
@@ -267,6 +268,8 @@ function NodeStats({ node, divided }: { node: PlanNode; divided: boolean }) {
   return (
     <div>
       <h3>{nodeLabel(node)}</h3>
+      <NodeExplanation node={node} />
+      <h4>Estimated vs actual rows</h4>
       {!rows.executed ? (
         <p>
           Never executed: Postgres planned this node but the query finished without needing it (for
@@ -354,6 +357,42 @@ function NodeStats({ node, divided }: { node: PlanNode; divided: boolean }) {
 }
 
 const statsDocs = "https://www.postgresql.org/docs/current/planner-stats.html";
+
+function NodeExplanation({ node }: { node: PlanNode }) {
+  const explanation = nodeExplanation(node);
+  const notes = nodeNotes(node);
+  return (
+    <>
+      {explanation ? (
+        <Paragraph explanation={explanation} />
+      ) : (
+        <p>
+          No explanation written for {node["Node Type"]} yet.{" "}
+          <a href={explainDocs} target="_blank" rel="noreferrer">
+            Using EXPLAIN
+          </a>
+        </p>
+      )}
+      {notes.map((note) => (
+        <Paragraph key={note.text} explanation={note} />
+      ))}
+    </>
+  );
+}
+
+// `backticks` in the text become <code>: the odd pieces of the split.
+function Paragraph({ explanation }: { explanation: Explanation }) {
+  return (
+    <p>
+      {explanation.text
+        .split("`")
+        .map((piece, i) => (i % 2 ? <code key={i}>{piece}</code> : piece))}{" "}
+      <a href={explanation.docs} target="_blank" rel="noreferrer">
+        Docs
+      </a>
+    </p>
+  );
+}
 
 function unexpected(error: unknown): DbError {
   return { kind: "client", message: error instanceof Error ? error.message : String(error) };
