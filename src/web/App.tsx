@@ -191,7 +191,7 @@ function Plan({ explain }: { explain: Explain }) {
   const above = useMemo(() => ancestors(explain.Plan), [explain]);
   return (
     <>
-      {writes(explain.Plan) && <Paragraph explanation={rolledBack} />}
+      <Paragraph explanation={rolledBack(writes(explain.Plan))} />
       <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
         <div style={{ flex: "1 1 0", minWidth: 0 }}>
           <pre style={{ overflowX: "auto" }}>

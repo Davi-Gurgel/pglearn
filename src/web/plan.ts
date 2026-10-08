@@ -245,8 +245,9 @@ function modifyTables(node: PlanNode): PlanNode[] {
   return node["Node Type"] === "ModifyTable" ? [node, ...below] : below;
 }
 
-// Whether the plan changes data. A write inside a WITH query runs even when
-// the main query does not read it.
+// Whether the plan has a node that changes rows. A write inside a WITH query
+// runs even when the main query does not read it. Writes from CREATE TABLE AS
+// or from inside functions have no node, so this can be false for them.
 export function writes(root: PlanNode): boolean {
   return modifyTables(root).length > 0;
 }

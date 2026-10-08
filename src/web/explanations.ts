@@ -19,11 +19,15 @@ const workMemDocs = docs("runtime-config-resource.html#GUC-WORK-MEM");
 const parallelDocs = docs("how-parallel-query-works.html");
 const explainAnalyzeDocs = docs("using-explain.html#USING-EXPLAIN-ANALYZE");
 
-// Shown above a plan that wrote, so nobody thinks the data changed.
-export const rolledBack: Explanation = {
-  text: "Explain ran this statement for real, in a transaction that it then rolled back (`ROLLBACK`), so the data is unchanged. Two things a rollback does not undo: sequence values it took with `nextval()`, like a new `serial` id, are not given back (sequences skip rolled-back values so concurrent inserts never wait for each other), and the row versions it wrote stay in the table as dead rows until `VACUUM` removes them.",
-  docs: docs("tutorial-transactions.html"),
-};
+// Shown above every plan: EXPLAIN ANALYZE runs the statement, and not every
+// write shows up as an Insert / Update / Delete node (CREATE TABLE AS shows
+// only its SELECT; a function called by a SELECT can write too).
+export function rolledBack(changesRows: boolean): Explanation {
+  return {
+    text: `Explain ran this statement for real, in a transaction that it then rolled back (\`ROLLBACK\`), so ${changesRows ? "the rows it changed are back as they were" : "anything it wrote, like the table of a `CREATE TABLE AS` or rows changed by a function it called, is undone"}. Two things a rollback does not undo: sequence values it took with \`nextval()\`, like a new \`serial\` id, are not given back (sequences skip rolled-back values so concurrent inserts never wait for each other), and any row versions it wrote stay in the table as dead rows until \`VACUUM\` removes them.`,
+    docs: docs("tutorial-transactions.html"),
+  };
+}
 
 // Shown under the trigger lines of a plan.
 export const triggersRan: Explanation = {
