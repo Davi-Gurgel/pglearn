@@ -118,6 +118,18 @@ export function dividedAmongProcesses(root: PlanNode): Set<PlanNode> {
   return divided;
 }
 
+// Each node's ancestors, nearest first: what a node means can depend on what
+// sits above it (a Gather, an Append).
+export function ancestors(root: PlanNode): Map<PlanNode, PlanNode[]> {
+  const map = new Map<PlanNode, PlanNode[]>();
+  const visit = (node: PlanNode, above: PlanNode[]) => {
+    map.set(node, above);
+    for (const child of node.Plans ?? []) visit(child, [node, ...above]);
+  };
+  visit(root, []);
+  return map;
+}
+
 // Lines shown under a node, in psql's order. Every other key is left out
 // until a milestone needs it.
 const detailKeys = [

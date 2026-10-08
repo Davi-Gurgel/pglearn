@@ -26,8 +26,8 @@ const explanations: Record<string, Explanation> = {
     docs: joinDocs,
   },
   "Index Scan": {
-    text: "Searches an index for the matching entries (`Index Cond`), then fetches each matching row from the table. An index is a separate structure, usually a sorted tree (B-tree), that points to where each row lives. Fast for a few rows; for many, jumping between the index and the table costs more than a Seq Scan. Rows come out in index order, which can save a Sort. `Backward` means the index was read from its end, for `ORDER BY ... DESC`.",
-    docs: docs("indexes-intro.html"),
+    text: "Searches an index for the matching entries (`Index Cond`), then fetches each matching row from the table. An index is a separate structure that points to where each row lives. Fast for a few rows; for many, jumping between the index and the table costs more than a Seq Scan. Only the default kind, B-tree, keeps its entries sorted, so its rows come out in index order and can save a Sort; other kinds (GiST, GIN, ...) return them in no useful order, except a nearest-first `Order By` search. `Backward` means a B-tree was read from its end, giving the reverse of the order it was built with: `ORDER BY ... DESC` for the default ascending index, ascending for an index built `DESC`.",
+    docs: docs("indexes-ordering.html"),
   },
   "Index Only Scan": {
     text: "Like an Index Scan, but every column the query needs is stored in the index, so it can usually skip the table. It still has to know whether each row is visible to this transaction (a row may be deleted or not yet committed): for that it checks the visibility map, and only reads the table (`Heap Fetches`) for pages not marked all-visible.",
@@ -214,8 +214,9 @@ const joinTypes: Record<string, string> = {
 };
 
 // Remarks about this particular node, beyond what its type does: how it joins,
-// whether it ran in parallel, whether it ran out of memory.
-export function nodeNotes(node: PlanNode): Explanation[] {
+// whether it ran in parallel, whether it ran out of memory. `ancestors` are
+// the node's parents, nearest first.
+export function nodeNotes(node: PlanNode, ancestors: PlanNode[]): Explanation[] {
   const notes: Explanation[] = [];
   const joinType = joinTypes[node["Join Type"] ?? ""];
   if (joinType) {
@@ -228,16 +229,26 @@ export function nodeNotes(node: PlanNode): Explanation[] {
     });
   }
   if (node["Partial Mode"] === "Partial") {
-    notes.push({
-      text: "Partial: each parallel process aggregates only its own share of the rows; a Finalize aggregate above combines their results.",
-      docs: docs("parallel-plans.html#PARALLEL-AGGREGATION"),
-    });
+    const finalize = ancestors.findIndex(isFinalize);
+    const path = finalize === -1 ? ancestors : ancestors.slice(0, finalize);
+    notes.push(
+      twoSteps(
+        "Partial: the first of two aggregation steps. It aggregates only part of the rows and passes an intermediate result (like a count so far) up to a Finalize aggregate, which combines them.",
+        path,
+        " It runs in parallel processes, below a Gather, each aggregating the rows it read.",
+        " Each partition gets its own (partitionwise aggregate), and an Append collects their results.",
+      ),
+    );
   }
-  if (node["Partial Mode"] === "Finalize") {
-    notes.push({
-      text: "Finalize: combines the partial results that each parallel process computed below the Gather.",
-      docs: docs("parallel-plans.html#PARALLEL-AGGREGATION"),
-    });
+  if (isFinalize(node)) {
+    notes.push(
+      twoSteps(
+        "Finalize: the second of two aggregation steps. It combines the intermediate results of the Partial aggregates below into the final ones.",
+        towardsPartials(node),
+        " Those ran in parallel processes, whose rows a Gather collected.",
+        " There is one per partition (partitionwise aggregate).",
+      ),
+    );
   }
   const spill = spilled(node);
   if (spill) notes.push({ text: spill, docs: workMemDocs });
@@ -251,8 +262,46 @@ export function nodeNotes(node: PlanNode): Explanation[] {
   return notes;
 }
 
+// An aggregate split in two (Partial below, Finalize above) is either parallel
+// (a Gather between the steps) or partitionwise (an Append between them, one
+// Partial per partition), or both at once. Without either, say neither.
+function twoSteps(
+  text: string,
+  between: PlanNode[],
+  parallel: string,
+  perPartition: string,
+): Explanation {
+  const isParallel = between.some(isGather);
+  const isPerPartition = between.some(
+    (node) => node["Node Type"] === "Append" || node["Node Type"] === "Merge Append",
+  );
+  return {
+    text: text + (isParallel ? parallel : "") + (isPerPartition ? perPartition : ""),
+    docs:
+      isPerPartition && !isParallel
+        ? docs("runtime-config-query.html#GUC-ENABLE-PARTITIONWISE-AGGREGATE")
+        : docs("parallel-plans.html#PARALLEL-AGGREGATION"),
+  };
+}
+
+const isFinalize = (node: PlanNode) => node["Partial Mode"] === "Finalize";
+const isGather = (node: PlanNode) =>
+  node["Node Type"] === "Gather" || node["Node Type"] === "Gather Merge";
+
+// The nodes below a Finalize aggregate, down to (not including) its Partials.
+function towardsPartials(finalize: PlanNode): PlanNode[] {
+  const nodes: PlanNode[] = [];
+  const visit = (node: PlanNode) => {
+    if (node["Partial Mode"] === "Partial") return;
+    nodes.push(node);
+    node.Plans?.forEach(visit);
+  };
+  finalize.Plans?.forEach(visit);
+  return nodes;
+}
+
 const memoryAdvice =
-  "Disk is much slower. Raising `work_mem` for the session (`SET work_mem = '64MB'`) would keep it in memory, if the server can spare it: every sort and hash table in every running query may use that much.";
+  "Disk is slower. Raising `work_mem` for the session (`SET work_mem = '64MB'`) can reduce or avoid the spill, if the server can spare the memory: the limit applies to each sort or hash table separately, and a query can run several at once, in each of its processes.";
 
 // Sort, Hash and HashAggregate run out of memory past `work_mem` (hash tables:
 // times `hash_mem_multiplier`) and continue on disk. In a parallel plan each
@@ -288,13 +337,13 @@ function spilled(node: PlanNode): string | undefined {
     if (batches > 1) {
       const surprise =
         planned < batches ? ` It planned ${planned}: the input was larger than estimated.` : "";
-      return `The hash table did not fit in memory, so it was split into ${batches} batches, all but one written to disk and joined one at a time.${surprise} ${memoryAdvice}`;
+      return `The hash table did not fit in memory, so it was split into ${batches} batches, all but one written to disk and joined one at a time.${surprise} A hash table may use \`work_mem\` × \`hash_mem_multiplier\` (4 MB × 2 = 8 MB by default). ${memoryAdvice}`;
     }
   }
   if (type === "Aggregate" && node.Strategy !== "Plain") {
     const disk = most("Disk Usage");
     if (disk > 0)
-      return `The groups did not fit in memory, so ${kB(disk)} of them went to disk and were aggregated in later passes. ${memoryAdvice}`;
+      return `The groups did not fit in memory, so ${kB(disk)} of them went to disk and were aggregated in later passes. A hash table may use \`work_mem\` × \`hash_mem_multiplier\` (4 MB × 2 = 8 MB by default). ${memoryAdvice}`;
   }
   return undefined;
 }

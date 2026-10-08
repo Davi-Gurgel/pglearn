@@ -8,7 +8,14 @@ import type {
   QueryResult,
 } from "../contracts/ipc";
 import { explainDocs, nodeExplanation, nodeNotes, type Explanation } from "./explanations";
-import { dividedAmongProcesses, nodeDetails, nodeLabel, nodeNumbers, rowsComparison } from "./plan";
+import {
+  ancestors,
+  dividedAmongProcesses,
+  nodeDetails,
+  nodeLabel,
+  nodeNumbers,
+  rowsComparison,
+} from "./plan";
 import { sqlstateClass, sqlstateDocs } from "./sqlstate";
 
 // What the last Run or Explain returned, with the SQL that produced it.
@@ -172,6 +179,7 @@ function Results({ result }: { result: Extract<QueryResult, { ok: true }> }) {
 function Plan({ explain }: { explain: Explain }) {
   const [selected, setSelected] = useState<PlanNode | null>(null);
   const divided = useMemo(() => dividedAmongProcesses(explain.Plan), [explain]);
+  const above = useMemo(() => ancestors(explain.Plan), [explain]);
   return (
     <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
       <pre style={{ flex: "1 1 0", minWidth: 0, overflowX: "auto" }}>
@@ -185,7 +193,11 @@ function Plan({ explain }: { explain: Explain }) {
       </pre>
       <aside style={{ flex: "0 0 24rem", position: "sticky", top: 0 }}>
         {selected ? (
-          <NodeStats node={selected} divided={divided.has(selected)} />
+          <NodeStats
+            node={selected}
+            divided={divided.has(selected)}
+            ancestors={above.get(selected) ?? []}
+          />
         ) : (
           <p>Click a node to see what it does and compare its rows.</p>
         )}
@@ -262,13 +274,21 @@ function PlanTree({
 const plural = (n: number, word: string) =>
   `${n.toLocaleString("en-US")} ${word}${n === 1 ? "" : "s"}`;
 
-function NodeStats({ node, divided }: { node: PlanNode; divided: boolean }) {
+function NodeStats({
+  node,
+  divided,
+  ancestors,
+}: {
+  node: PlanNode;
+  divided: boolean;
+  ancestors: PlanNode[];
+}) {
   const rows = rowsComparison(node, divided);
   const table = node["Relation Name"];
   return (
     <div>
       <h3>{nodeLabel(node)}</h3>
-      <NodeExplanation node={node} />
+      <NodeExplanation node={node} ancestors={ancestors} />
       <h4>Estimated vs actual rows</h4>
       {!rows.executed ? (
         <p>
@@ -358,9 +378,9 @@ function NodeStats({ node, divided }: { node: PlanNode; divided: boolean }) {
 
 const statsDocs = "https://www.postgresql.org/docs/current/planner-stats.html";
 
-function NodeExplanation({ node }: { node: PlanNode }) {
+function NodeExplanation({ node, ancestors }: { node: PlanNode; ancestors: PlanNode[] }) {
   const explanation = nodeExplanation(node);
-  const notes = nodeNotes(node);
+  const notes = nodeNotes(node, ancestors);
   return (
     <>
       {explanation ? (
