@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type {
   DbError,
   Explain,
@@ -7,7 +7,7 @@ import type {
   PlanNode,
   QueryResult,
 } from "../contracts/ipc";
-import { nodeDetails, nodeLabel, nodeNumbers, rowsComparison } from "./plan";
+import { dividedAmongProcesses, nodeDetails, nodeLabel, nodeNumbers, rowsComparison } from "./plan";
 import { sqlstateClass, sqlstateDocs } from "./sqlstate";
 
 // What the last Run or Explain returned, with the SQL that produced it.
@@ -170,6 +170,7 @@ function Results({ result }: { result: Extract<QueryResult, { ok: true }> }) {
 // Click a node to see its estimated vs actual rows beside the tree.
 function Plan({ explain }: { explain: Explain }) {
   const [selected, setSelected] = useState<PlanNode | null>(null);
+  const divided = useMemo(() => dividedAmongProcesses(explain.Plan), [explain]);
   return (
     <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
       <pre style={{ flex: "1 1 0", minWidth: 0, overflowX: "auto" }}>
@@ -182,7 +183,11 @@ function Plan({ explain }: { explain: Explain }) {
         {`Execution Time: ${explain["Execution Time"].toFixed(3)} ms`}
       </pre>
       <aside style={{ flex: "0 0 24rem", position: "sticky", top: 0 }}>
-        {selected ? <NodeStats node={selected} /> : <p>Click a node to compare its rows.</p>}
+        {selected ? (
+          <NodeStats node={selected} divided={divided.has(selected)} />
+        ) : (
+          <p>Click a node to compare its rows.</p>
+        )}
       </aside>
     </div>
   );
@@ -256,8 +261,8 @@ function PlanTree({
 const plural = (n: number, word: string) =>
   `${n.toLocaleString("en-US")} ${word}${n === 1 ? "" : "s"}`;
 
-function NodeStats({ node }: { node: PlanNode }) {
-  const rows = rowsComparison(node);
+function NodeStats({ node, divided }: { node: PlanNode; divided: boolean }) {
+  const rows = rowsComparison(node, divided);
   const table = node["Relation Name"];
   return (
     <div>

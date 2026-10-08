@@ -59,15 +59,17 @@ export type RowsComparison =
       verdict: "close" | "high" | "low" | "parallel" | "bitmap";
     };
 
-export function rowsComparison(node: PlanNode): RowsComparison {
+export function rowsComparison(node: PlanNode, dividedAmongProcesses: boolean): RowsComparison {
   const loops = node["Actual Loops"];
   if (loops === 0) return { executed: false };
   const estimated = node["Plan Rows"];
   const actual = node["Actual Rows"];
-  // Postgres never plans fewer than 1 row but a node can return 0; clamping
-  // both avoids dividing by zero, and "0 vs 1" is not a 100x mistake anyway.
+  // Postgres never plans fewer than 1 row, but a node can return 0. Only that
+  // exact 0 is lifted to 1 (to avoid dividing by zero; "0 vs 1" is not a 100x
+  // mistake). A fractional average like 0.01 over many loops is a real
+  // signal and must stay: an estimate of 1 against it is 100x too high.
   const e = Math.max(estimated, 1);
-  const a = Math.max(actual, 1);
+  const a = actual === 0 ? 1 : actual;
   const factor = Math.max(e / a, a / e);
   return {
     executed: true,
@@ -76,7 +78,8 @@ export function rowsComparison(node: PlanNode): RowsComparison {
     loops,
     total: Math.round(actual * loops),
     factor,
-    verdict: incomparable(node) ?? (factor < 2 ? "close" : e > a ? "high" : "low"),
+    verdict:
+      incomparable(node, dividedAmongProcesses) ?? (factor < 2 ? "close" : e > a ? "high" : "low"),
   };
 }
 
@@ -84,9 +87,32 @@ export function rowsComparison(node: PlanNode): RowsComparison {
 // workers (by a fraction we cannot recover from the node), and when no worker
 // launches the one process still reads everything. BitmapAnd / BitmapOr produce
 // a bitmap, not rows, so Actual Rows is always 0.
-function incomparable(node: PlanNode): "parallel" | "bitmap" | undefined {
+function incomparable(
+  node: PlanNode,
+  dividedAmongProcesses: boolean,
+): "parallel" | "bitmap" | undefined {
   if (node["Node Type"] === "BitmapAnd" || node["Node Type"] === "BitmapOr") return "bitmap";
-  return node["Parallel Aware"] ? "parallel" : undefined;
+  return dividedAmongProcesses ? "parallel" : undefined;
+}
+
+// The nodes whose `Plan Rows` is a per-process share. That is not only the
+// nodes flagged "Parallel Aware": a Sort or Nested Loop above a Parallel Seq
+// Scan, still below the Gather, inherits the divided estimate (and a Sort has
+// Parallel Aware false). A node below a Gather with no parallel-aware node in
+// its own subtree, like the inner side of a Nested Loop, is not divided.
+export function dividedAmongProcesses(root: PlanNode): Set<PlanNode> {
+  const divided = new Set<PlanNode>();
+  const visit = (node: PlanNode, belowGather: boolean): boolean => {
+    const isGather = node["Node Type"] === "Gather" || node["Node Type"] === "Gather Merge";
+    let hasParallelAware = node["Parallel Aware"];
+    for (const child of node.Plans ?? []) {
+      if (visit(child, belowGather || isGather)) hasParallelAware = true;
+    }
+    if (node["Parallel Aware"] || (belowGather && hasParallelAware)) divided.add(node);
+    return hasParallelAware;
+  };
+  visit(root, false);
+  return divided;
 }
 
 // Lines shown under a node, in psql's order. Every other key is left out
