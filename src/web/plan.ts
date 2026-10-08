@@ -4,6 +4,12 @@ import type { Explain, PlanNode } from "../contracts/ipc";
 // "HashAggregate" into several keys, and this puts them back together, so the
 // tree reads like the plans in the docs and in tutorials.
 export function nodeLabel(node: PlanNode): string {
+  const target = nodeTarget(node);
+  return target ? `${nodeOperation(node)} ${target}` : nodeOperation(node);
+}
+
+// The first part of the label: what the node does ("Parallel Seq Scan").
+export function nodeOperation(node: PlanNode): string {
   let label = node["Node Type"];
   if (label === "Aggregate") label = aggregates[node.Strategy ?? ""] ?? label;
   if (label === "SetOp" && node.Strategy === "Hashed") label = "HashSetOp";
@@ -20,15 +26,55 @@ export function nodeLabel(node: PlanNode): string {
   if (typeof node["Command"] === "string") label += ` ${node["Command"]}`;
   if (node["Parallel Aware"]) label = `Parallel ${label}`;
   if (node["Scan Direction"] === "Backward") label += " Backward";
-  // A Bitmap Index Scan reads only the index, so the index is what it is "on".
-  if (node["Node Type"] === "Bitmap Index Scan") return `${label} on ${node["Index Name"]}`;
-  if (node["Index Name"]) label += ` using ${node["Index Name"]}`;
+  return label;
+}
 
+// The rest of the label: what it works on ("using idx_title on film").
+export function nodeTarget(node: PlanNode): string | undefined {
+  // A Bitmap Index Scan reads only the index, so the index is what it is "on".
+  if (node["Node Type"] === "Bitmap Index Scan") return `on ${node["Index Name"]}`;
+  const parts: string[] = [];
+  if (node["Index Name"]) parts.push(`using ${node["Index Name"]}`);
   const target = node["Relation Name"] ?? node["CTE Name"] ?? node["Function Name"];
   const alias = node.Alias;
-  if (target) label += ` on ${named(target, alias)}`;
-  else if (alias) label += ` on ${alias}`;
-  return label;
+  if (target) parts.push(`on ${named(target, alias)}`);
+  else if (alias) parts.push(`on ${alias}`);
+  return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
+// What a node does to the rows, in four broad kinds the graph colors and
+// shapes by. "other" is plumbing: Gather, Result, LockRows.
+export type NodeFamily = "read" | "combine" | "transform" | "write" | "other";
+
+const families: Record<string, NodeFamily> = {
+  "Nested Loop": "combine",
+  "Hash Join": "combine",
+  "Merge Join": "combine",
+  Append: "combine",
+  "Merge Append": "combine",
+  BitmapAnd: "combine",
+  BitmapOr: "combine",
+  "Recursive Union": "combine",
+  Sort: "transform",
+  "Incremental Sort": "transform",
+  Aggregate: "transform",
+  Group: "transform",
+  WindowAgg: "transform",
+  Unique: "transform",
+  SetOp: "transform",
+  Limit: "transform",
+  Hash: "transform",
+  Materialize: "transform",
+  Memoize: "transform",
+  ProjectSet: "transform",
+  ModifyTable: "write",
+};
+
+export function nodeFamily(node: PlanNode): NodeFamily {
+  const type = node["Node Type"];
+  // Seq Scan, Index Scan, CTE Scan, Function Scan, Foreign Scan, ...
+  if (type.endsWith(" Scan")) return "read";
+  return families[type] ?? "other";
 }
 
 // psql prints the alias only when the query gave the table another name.
@@ -250,4 +296,27 @@ function modifyTables(node: PlanNode): PlanNode[] {
 // or from inside functions have no node, so this can be false for them.
 export function writes(root: PlanNode): boolean {
   return modifyTables(root).length > 0;
+}
+
+// What travels up the edge to the parent: rows (all loops together, so
+// approximate when Postgres rounded the per-loop average), a bitmap of table
+// locations, or nothing because the node never ran.
+export type Sent =
+  | { kind: "rows"; rows: number; approximate: boolean }
+  | { kind: "bitmap" }
+  | { kind: "never" };
+
+export function sentToParent(node: PlanNode): Sent {
+  const loops = node["Actual Loops"];
+  if (loops === 0) return { kind: "never" };
+  const type = node["Node Type"];
+  if (type === "Bitmap Index Scan" || type === "BitmapAnd" || type === "BitmapOr") {
+    return { kind: "bitmap" };
+  }
+  const actual = node["Actual Rows"];
+  return {
+    kind: "rows",
+    rows: Math.round(actual * loops),
+    approximate: loops > 1 && !Number.isInteger(actual),
+  };
 }

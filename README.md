@@ -4,7 +4,9 @@ A visual desktop client for PostgreSQL focused on **learning and understanding t
 
 pglearn combines the familiarity of a client like DBeaver with a didactic layer that shows what PostgreSQL is doing under the hood.
 
-> **Status:** early development. Nothing is usable yet.
+> **Status:** the MVP works: connect, run SQL, explain a query and read its plan as a graph.
+
+![A four-table join explained: the plan as a graph of steps, with a Nested Loop selected and explained beside it](docs/screenshot.png)
 
 ## Planned features
 

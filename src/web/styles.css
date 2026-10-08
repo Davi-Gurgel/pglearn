@@ -1,0 +1,1050 @@
+/* One stylesheet for the whole app. Colors are variables so the dark theme
+   only swaps values. Postgres's own blue is the accent; each node family has
+   a color of its own, used for its glyph, its card's edge and its diagram. */
+
+:root {
+  color-scheme: light dark;
+  --bg: #e8ecf1;
+  --surface: #ffffff;
+  --surface-2: #f3f5f8;
+  --ink: #17202c;
+  --ink-2: #445063;
+  --muted: #758093;
+  --line: #d3d9e1;
+  --grid-dot: #cdd4de;
+  --accent: #336791;
+  --accent-soft: #dce8f3;
+  --edge: #9ba7b6;
+  --read: #336791;
+  --combine: #7b4fb3;
+  --transform: #b06d12;
+  --write: #c0392f;
+  --other: #6b7480;
+  --close: #23845f;
+  --close-soft: #dcf1e7;
+  --off: #a8640c;
+  --off-soft: #fbecd2;
+  --far: #c0392f;
+  --far-soft: #f9dedb;
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12171e;
+    --surface: #1a212b;
+    --surface-2: #212a36;
+    --ink: #e4e9ef;
+    --ink-2: #b3bdca;
+    --muted: #8590a0;
+    --line: #2d3744;
+    --grid-dot: #27303c;
+    --accent: #78a9d6;
+    --accent-soft: #233446;
+    --edge: #5d6a7a;
+    --read: #78a9d6;
+    --combine: #ab8be0;
+    --transform: #dca457;
+    --write: #ec7a70;
+    --other: #98a3b1;
+    --close: #5cc79a;
+    --close-soft: #1d3a30;
+    --off: #e0a650;
+    --off-soft: #3d3020;
+    --far: #f0827a;
+    --far-soft: #452624;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 13px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+code,
+pre,
+kbd,
+textarea {
+  font-family: var(--mono);
+}
+
+code {
+  font-size: 0.92em;
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 0.05em 0.3em;
+}
+
+a {
+  color: var(--accent);
+}
+
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 650;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button,
+select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled),
+select:hover {
+  border-color: var(--edge);
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+kbd {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-left: 4px;
+}
+
+/* Layout: a header, the editor, and the output taking the rest. */
+
+.app {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  /* minmax(0, ...) lets a wide results grid scroll instead of widening the page. */
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+.logo {
+  width: 20px;
+  height: 20px;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  fill: var(--surface);
+}
+
+.connection {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: none;
+  color: var(--ink-2);
+  padding: 4px 8px;
+}
+
+.connection-db {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.connection[data-state="ok"] .dot {
+  background: var(--close);
+  box-shadow: 0 0 0 3px var(--close-soft);
+}
+
+.connection[data-state="error"] .dot {
+  background: var(--far);
+  box-shadow: 0 0 0 3px var(--far-soft);
+}
+
+.connection[data-state="error"] {
+  color: var(--far);
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.editor textarea {
+  height: 112px;
+  min-height: 52px;
+  max-height: 45vh;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+.editor textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar select {
+  margin-left: auto;
+  color: var(--ink-2);
+  max-width: 280px;
+}
+
+button.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--surface);
+  font-weight: 600;
+}
+
+button.explain {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+  button.explain {
+    color: var(--bg);
+  }
+}
+
+.output {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Empty, running and error states. */
+
+.welcome {
+  max-width: 640px;
+  margin: 48px auto;
+  padding: 0 24px;
+}
+
+.welcome h2 {
+  font-size: 20px;
+  letter-spacing: -0.015em;
+  margin-bottom: 20px;
+}
+
+.welcome-steps {
+  display: grid;
+  gap: 16px;
+}
+
+.welcome-steps > div {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.welcome-steps p {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.running {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 3s;
+  }
+}
+
+.error,
+.notice {
+  margin: 16px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.error {
+  border-left: 3px solid var(--far);
+}
+
+.error pre {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+  color: var(--far);
+}
+
+.error p {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.welcome .error {
+  margin: 16px 0 0;
+}
+
+/* Results grid. */
+
+.results {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.summary-line {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 8px 16px;
+  color: var(--ink-2);
+}
+
+.grid-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+
+.grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.grid th,
+.grid td {
+  padding: 4px 12px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.grid th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-2);
+  font-family: var(--sans);
+  vertical-align: bottom;
+}
+
+.grid .numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.column-name {
+  display: block;
+  font-weight: 600;
+}
+
+.column-type {
+  display: block;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.grid .row-number {
+  position: sticky;
+  left: 0;
+  background: var(--surface-2);
+  color: var(--muted);
+  text-align: right;
+  min-width: 40px;
+}
+
+.grid th.row-number {
+  z-index: 2;
+}
+
+.grid tbody tr:hover td:not(.row-number) {
+  background: var(--accent-soft);
+}
+
+.null {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.empty-rows {
+  padding: 8px 16px;
+  color: var(--muted);
+}
+
+/* The plan: a bar, then the drawing and the inspector side by side. */
+
+.plan {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.plan-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-2);
+  border-radius: 7px;
+  padding: 2px;
+}
+
+.tabs button {
+  border: none;
+  background: none;
+  padding: 2px 10px;
+  border-radius: 5px;
+  color: var(--ink-2);
+}
+
+.tabs button[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.timing {
+  font-variant-numeric: tabular-nums;
+}
+
+.rolled-back {
+  position: relative;
+  margin-left: auto;
+}
+
+.rolled-back summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  list-style: none;
+}
+
+.rolled-back summary::before {
+  content: "↺ ";
+  color: var(--close);
+}
+
+.popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 10;
+  width: 380px;
+  padding: 4px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+}
+
+.plan-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.plan-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.inspector {
+  flex: 0 0 360px;
+  overflow-y: auto;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+  padding: 16px 18px 24px;
+}
+
+@media (max-width: 900px) {
+  .inspector {
+    flex-basis: 300px;
+  }
+}
+
+.inspector p {
+  margin: 0 0 10px;
+  color: var(--ink-2);
+}
+
+.inspector h3 {
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
+.inspector h4 {
+  font-size: 12px;
+  margin: 18px 0 8px;
+  color: var(--ink);
+}
+
+/* The graph. */
+
+.graph {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.graph-viewport {
+  flex: 1;
+  overflow: auto;
+  /* A dot grid, like drafting paper: the drawing sits on it. */
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+.graph-canvas {
+  position: relative;
+  padding: 32px;
+  margin: 0 auto;
+}
+
+.graph-world {
+  position: relative;
+  transform-origin: 0 0;
+}
+
+.graph-edges {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.edge-line {
+  fill: none;
+  stroke: var(--edge);
+  opacity: 0.75;
+}
+
+.edge-head {
+  fill: var(--edge);
+}
+
+.edge.active .edge-line {
+  stroke: var(--accent);
+  opacity: 1;
+}
+
+.edge.active .edge-head {
+  fill: var(--accent);
+}
+
+.edge-never .edge-line,
+.edge-bitmap .edge-line {
+  stroke-dasharray: 4 4;
+}
+
+.edge text {
+  font-size: 11px;
+  fill: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.edge.active text {
+  fill: var(--ink);
+  font-weight: 600;
+}
+
+.card-head .chip {
+  margin-left: auto;
+}
+
+.card-head .chip + .card-tag {
+  margin-left: 0;
+}
+
+.card-tag {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.card {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: left;
+  padding: 8px 12px 8px 14px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+  overflow: hidden;
+  --family: var(--other);
+}
+
+/* The family color runs down the card's left edge. */
+.card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--family);
+}
+
+.card:hover:not(:disabled) {
+  border-color: var(--family);
+}
+
+.card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.card.more {
+  border-style: dashed;
+  background: var(--surface-2);
+  box-shadow: none;
+}
+
+.card.never {
+  border-style: dashed;
+  background: var(--surface-2);
+  box-shadow: none;
+}
+
+.card.never .card-head,
+.card.never .card-target {
+  opacity: 0.6;
+}
+
+.family-read {
+  --family: var(--read);
+}
+.family-combine {
+  --family: var(--combine);
+}
+.family-transform {
+  --family: var(--transform);
+}
+.family-write {
+  --family: var(--write);
+}
+.family-other {
+  --family: var(--other);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.card-operation {
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-target {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-rows {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.card-numbers {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.glyph {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--family);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chip {
+  display: inline-block;
+  padding: 0 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.chip-close {
+  color: var(--close);
+  background: var(--close-soft);
+}
+
+.chip-off {
+  color: var(--off);
+  background: var(--off-soft);
+}
+
+.chip-far {
+  color: var(--far);
+  background: var(--far-soft);
+}
+
+.graph-zoom {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.08);
+}
+
+.graph-zoom button {
+  border: none;
+  min-width: 30px;
+  padding: 2px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* psql's text view. */
+
+.plan-text {
+  flex: 1;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--surface);
+}
+
+.plan-text-node {
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.plan-text-node:hover {
+  background: var(--surface-2);
+}
+
+.plan-text-node[aria-pressed="true"] {
+  background: var(--accent-soft);
+}
+
+/* Inspector contents. */
+
+.legend .families,
+.legend .chips {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 14px;
+  display: grid;
+  gap: 8px;
+  color: var(--ink-2);
+}
+
+.legend .families li,
+.legend .chips li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.legend .chips .chip {
+  min-width: 78px;
+  text-align: center;
+}
+
+.legend h3 {
+  margin-bottom: 10px;
+}
+
+.legend h3:not(:first-child) {
+  margin-top: 20px;
+}
+
+.trigger-lines {
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  margin: 0 0 10px;
+}
+
+.node-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.node-title .glyph {
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+}
+
+.node-title > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.node-target {
+  display: inline-block;
+  margin-top: 2px;
+  word-break: break-all;
+}
+
+.close {
+  border: none;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 4px;
+  color: var(--muted);
+}
+
+figure {
+  margin: 0 0 14px;
+  padding: 10px 10px 8px;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+
+figcaption {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-top: 4px;
+}
+
+.diagram {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.diagram .hit {
+  fill: var(--family);
+  fill-opacity: 0.85;
+}
+
+.diagram .dim {
+  fill: none;
+  stroke: var(--edge);
+  stroke-width: 1.2;
+}
+
+.diagram .line {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.3;
+}
+
+.diagram .cut {
+  stroke: var(--far);
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+}
+
+.diagram .fill-ink {
+  fill: var(--ink-2);
+}
+
+.diagram .label {
+  font-size: 11px;
+  fill: var(--muted);
+}
+
+.diagram .group-0 {
+  fill: var(--read);
+}
+.diagram .group-1 {
+  fill: var(--combine);
+}
+.diagram .group-2 {
+  fill: var(--transform);
+}
+
+.note {
+  padding-left: 10px;
+  border-left: 2px solid var(--family);
+}
+
+.bars {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px 10px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.bar-track {
+  height: 10px;
+  background: var(--surface-2);
+  border-radius: 5px;
+}
+
+.bar {
+  height: 100%;
+  border-radius: 5px;
+}
+
+.bar-estimated {
+  background: var(--edge);
+}
+
+.bar-actual {
+  background: var(--accent);
+}
+
+.loops {
+  font-size: 12px;
+}
+
+.details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.details dt {
+  color: var(--muted);
+}
+
+.details dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  word-break: break-word;
+}
+
+.details dd:not(dt + dd) {
+  grid-column: 1 / -1;
+}
