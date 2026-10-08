@@ -2,6 +2,7 @@ import { PgClient, type PgConnection } from "@effect/sql-pg";
 import {
   Cause,
   Config,
+  Duration,
   Effect,
   Exit,
   ManagedRuntime,
@@ -17,14 +18,21 @@ import { toText } from "./query-cell";
 // The local database from compose.yaml. Set DATABASE_URL to use another one.
 const defaultUrl = "postgres://postgres:postgres@localhost:5432/pagila";
 
-// One connection pool for the whole app. Connections open lazily on the first
-// query, so building the runtime does not fail when Postgres is down; each query
-// reports its own error instead. `application_name` is how this app shows up in
-// `pg_stat_activity`.
+// One session for the whole app, like psql: a BEGIN or SET from one Run is
+// still in effect on the next, and Explain can tell when a transaction is open.
+// A pool of several connections would hand each query any of them, so a BEGIN
+// would land on one and its COMMIT maybe on another. The pool still opens the
+// connection lazily on the first query, so building the runtime does not fail
+// when Postgres is down, and replaces it if it breaks (Postgres then rolls back
+// whatever transaction it had). Without the infinite idle timeout it would
+// close the session after a minute unused, and with it an open transaction.
+// `application_name` is how this app shows up in `pg_stat_activity`.
 const runtime = ManagedRuntime.make(
   PgClient.layerConfig({
     url: Config.Redacted("DATABASE_URL").pipe(Config.withDefault(Redacted.make(defaultUrl))),
     applicationName: Config.succeed("pglearn"),
+    maxConnections: Config.succeed(1),
+    idleTimeout: Config.succeed(Duration.infinity),
   }),
 );
 
@@ -92,10 +100,14 @@ const runSql = Effect.fn("runSql")(function* (text: string) {
   };
 });
 
-// EXPLAIN ANALYZE runs the statement for real, so a DELETE would delete. It
-// runs in a read-only transaction that always rolls back: read-only makes
-// Postgres refuse most writes (SQLSTATE 25006), and the rollback undoes the
-// writes it still allows, like those to temporary tables.
+// EXPLAIN ANALYZE runs the statement for real, so a DELETE deletes. It runs in
+// a transaction that always rolls back, which undoes the rows it wrote, the
+// triggers it fired and any table it created. Not undone: sequence values taken
+// by nextval() (sequences never roll back, so concurrent inserts need not wait
+// for each other), and the dead row versions left in the table until VACUUM.
+// EXPLAIN only accepts a single SELECT, INSERT, UPDATE, DELETE, MERGE, VALUES,
+// EXECUTE, DECLARE or CREATE TABLE AS, so the statement cannot COMMIT; nor can
+// a function it calls (only procedures can, and EXPLAIN cannot CALL one).
 const explainPrefix = "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ";
 
 const explainSql = Effect.fn("explainSql")(function* (text: string) {
@@ -109,8 +121,8 @@ const explainSql = Effect.fn("explainSql")(function* (text: string) {
   return yield* Effect.scoped(
     Effect.gen(function* () {
       const conn = yield* sql.reserve;
-      // A BEGIN the user ran earlier may have left this pooled connection inside
-      // a transaction. Ours would join it, and its ROLLBACK would end theirs.
+      // A BEGIN the user ran earlier may have left the session inside a
+      // transaction. Ours would join it, and its ROLLBACK would end theirs.
       // now() is when the current transaction started: outside a transaction
       // block each statement is its own transaction, so two calls differ.
       // Text keeps the microseconds a Date would drop.
@@ -127,7 +139,8 @@ const explainSql = Effect.fn("explainSql")(function* (text: string) {
       }
       // Release runs on success, failure and cancel, after sql-pg has drained a
       // canceled query. A failed ROLLBACK is a bug, not a query error.
-      yield* Effect.acquireRelease(conn.executeRaw("begin read only", []), () =>
+      // Plain `begin`, so a server or session set to read only stays read only.
+      yield* Effect.acquireRelease(conn.executeRaw("begin", []), () =>
         Effect.orDie(conn.executeRaw("rollback", [])),
       );
       const result = (yield* conn.executeRaw(explainPrefix + text, [])) as PgConnection.Result;
@@ -153,11 +166,7 @@ function explainError(error: DbError): DbError {
     error.position === undefined || error.position <= explainPrefix.length
       ? undefined
       : error.position - explainPrefix.length;
-  const hint =
-    error.code === "25006"
-      ? "Explain runs the statement for real (EXPLAIN ANALYZE), so it only allows statements that do not change data."
-      : error.hint;
-  return { ...error, position, hint };
+  return { ...error, position };
 }
 
 // The app gives up on a query after this long. Interrupting the fiber makes
@@ -259,17 +268,23 @@ function toDbError(error: SqlError | Error): DbError {
     code: cause.code,
     message: cause.message,
     detail: cause.detail,
-    hint: cause.hint ?? hintFor(cause.message),
+    hint: cause.hint ?? hintFor(cause.code, cause.message),
     position: cause.position,
   };
 }
 
-// sql-pg runs every query as a prepared statement (Postgres's extended
-// protocol), and a prepared statement holds exactly one command. Matching the
-// text assumes the server reports in English (its lc_messages setting).
-function hintFor(message: string): string | undefined {
+// Hints for errors Postgres reports without one.
+function hintFor(code: string, message: string): string | undefined {
+  // sql-pg runs every query as a prepared statement (Postgres's extended
+  // protocol), and a prepared statement holds exactly one command. Matching the
+  // text assumes the server reports in English (its lc_messages setting).
   if (message.startsWith("cannot insert multiple commands into a prepared statement")) {
     return "pglearn runs one statement at a time. Remove the extra statements and run them separately.";
+  }
+  // After an error inside BEGIN ... COMMIT, Postgres refuses everything but the
+  // end of the transaction, which undoes all of it (COMMIT too).
+  if (code === "25P02") {
+    return "A statement in the transaction you started with BEGIN failed. Run ROLLBACK to end the transaction; nothing it did is kept.";
   }
   return undefined;
 }

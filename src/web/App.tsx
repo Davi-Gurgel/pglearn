@@ -7,7 +7,14 @@ import type {
   PlanNode,
   QueryResult,
 } from "../contracts/ipc";
-import { explainDocs, nodeExplanation, nodeNotes, type Explanation } from "./explanations";
+import {
+  explainDocs,
+  nodeExplanation,
+  nodeNotes,
+  rolledBack,
+  triggersRan,
+  type Explanation,
+} from "./explanations";
 import {
   ancestors,
   dividedAmongProcesses,
@@ -15,6 +22,8 @@ import {
   nodeLabel,
   nodeNumbers,
   rowsComparison,
+  triggerLines,
+  writes,
 } from "./plan";
 import { sqlstateClass, sqlstateDocs } from "./sqlstate";
 
@@ -181,28 +190,31 @@ function Plan({ explain }: { explain: Explain }) {
   const divided = useMemo(() => dividedAmongProcesses(explain.Plan), [explain]);
   const above = useMemo(() => ancestors(explain.Plan), [explain]);
   return (
-    <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
-      <pre style={{ flex: "1 1 0", minWidth: 0, overflowX: "auto" }}>
-        <PlanTree node={explain.Plan} selected={selected} onSelect={setSelected} />
-        {`Planning Time: ${explain["Planning Time"].toFixed(3)} ms\n`}
-        {explain.Triggers.map(
-          (trigger) =>
-            `Trigger ${trigger["Trigger Name"]}: time=${trigger.Time.toFixed(3)} calls=${trigger.Calls}\n`,
-        )}
-        {`Execution Time: ${explain["Execution Time"].toFixed(3)} ms`}
-      </pre>
-      <aside style={{ flex: "0 0 24rem", position: "sticky", top: 0 }}>
-        {selected ? (
-          <NodeStats
-            node={selected}
-            divided={divided.has(selected)}
-            ancestors={above.get(selected) ?? []}
-          />
-        ) : (
-          <p>Click a node to see what it does and compare its rows.</p>
-        )}
-      </aside>
-    </div>
+    <>
+      {writes(explain.Plan) && <Paragraph explanation={rolledBack} />}
+      <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
+        <div style={{ flex: "1 1 0", minWidth: 0 }}>
+          <pre style={{ overflowX: "auto" }}>
+            <PlanTree node={explain.Plan} selected={selected} onSelect={setSelected} />
+            {`Planning Time: ${explain["Planning Time"].toFixed(3)} ms\n`}
+            {triggerLines(explain).map((line) => `${line}\n`)}
+            {`Execution Time: ${explain["Execution Time"].toFixed(3)} ms`}
+          </pre>
+          {explain.Triggers.length > 0 && <Paragraph explanation={triggersRan} />}
+        </div>
+        <aside style={{ flex: "0 0 24rem", position: "sticky", top: 0 }}>
+          {selected ? (
+            <NodeStats
+              node={selected}
+              divided={divided.has(selected)}
+              ancestors={above.get(selected) ?? []}
+            />
+          ) : (
+            <p>Click a node to see what it does and compare its rows.</p>
+          )}
+        </aside>
+      </div>
+    </>
   );
 }
 

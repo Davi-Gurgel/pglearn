@@ -4,7 +4,8 @@ export interface DesktopBridge {
   versions: { electron: string; chrome: string; node: string };
   ping(): Promise<PingResult>;
   query(sql: string): Promise<QueryResult>;
-  // Runs the statement under EXPLAIN ANALYZE, so it really executes.
+  // Runs the statement under EXPLAIN ANALYZE, so it really executes, in a
+  // transaction that is always rolled back.
   explain(sql: string): Promise<ExplainResult>;
   // Stops the running query, if any. Its `query` call then resolves as canceled.
   cancel(): Promise<void>;
@@ -36,7 +37,15 @@ export type ExplainResult = { ok: true; plan: Explain } | { ok: false; error: Db
 export interface Explain {
   Plan: PlanNode;
   "Planning Time": number;
-  Triggers: { "Trigger Name": string; Relation?: string; Time: number; Calls: number }[];
+  // Only writes fire triggers. Foreign key checks are triggers too, with the
+  // constraint's name.
+  Triggers: {
+    "Trigger Name": string;
+    "Constraint Name"?: string;
+    Relation?: string;
+    Time: number;
+    Calls: number;
+  }[];
   "Execution Time": number;
 }
 
