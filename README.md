@@ -7,8 +7,8 @@ A macOS desktop client for learning to read execution plans. Run a query, open i
 [Download for macOS](https://github.com/Davi-Gurgel/pglearn/releases/latest) · [Try the sample database](#try-it-with-pagila) · [Contributing](CONTRIBUTING.md)
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
-  <img src="docs/screenshot.png" alt="The macOS app window with native controls and a real Pagila film and inventory join shown as a plan graph, with the Nested Loop inspector explaining its algorithm and estimated versus actual rows.">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.svg">
+  <img src="docs/screenshot.svg" alt="The macOS app window with native controls and a real Pagila film and inventory join shown as a plan graph, with the Nested Loop inspector explaining its algorithm and estimated versus actual rows.">
 </picture>
 
 ## What you can do
