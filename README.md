@@ -1,74 +1,94 @@
 # pglearn
 
-A visual desktop client for PostgreSQL focused on **learning and understanding the database**, not just running SQL.
+**See how PostgreSQL runs your SQL.**
 
-pglearn combines the familiarity of a client like DBeaver with a didactic layer that shows what PostgreSQL is doing under the hood.
+A macOS desktop client for learning to read execution plans. Run a query, open its plan as a graph, and click a step to understand what it does and how PostgreSQL's row estimate compares with the result.
 
-> **Status:** the MVP works: connect, run SQL, explain a query and read its plan as a graph.
+[Download for macOS](https://github.com/Davi-Gurgel/pglearn/releases/latest) · [Try the sample database](#try-it-with-pagila) · [Contributing](CONTRIBUTING.md)
 
-![A four-table join explained: the plan as a graph of steps, with a Nested Loop selected and explained beside it](docs/screenshot.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
+  <img src="docs/screenshot.png" alt="A real Pagila film and inventory join shown as a plan graph, with the Nested Loop inspector explaining its algorithm and estimated versus actual rows.">
+</picture>
 
-## Planned features
+## What you can do
 
-- **Database Explorer**: browse connections, schemas, tables, columns, PKs, FKs, indexes and constraints.
-- **Table Viewer**: open a table and inspect its data in a grid.
-- **SQL Editor**: write and run queries.
-- **Plan Explorer**: run `EXPLAIN` and see the plan as a visual tree.
-- **Node Inspector**: click a node (Seq Scan, Index Scan, Hash Join...) to get a plain-language explanation plus the real PostgreSQL data.
-- **Estimated vs Actual**: compare what PostgreSQL expected with what happened (`EXPLAIN ANALYZE`).
-- **Plan Compare**: compare a plan before and after a change, such as creating an index.
-- **Safe mode**: make it obvious when an action actually executes or changes data.
+- Connect to one PostgreSQL database using connection fields or a URL. The last connection is remembered using Electron's encrypted storage and the macOS Keychain.
+- Browse schemas and tables, write SQL, and view typed results in a paginated grid.
+- Run `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` and explore the plan as a graph or as text.
+- Click a node for a hand-written explanation, an algorithm diagram, row estimates versus actuals, and links to the PostgreSQL documentation.
+- Inspect loops, parallel work, buffer use, and sorts or hashes that spill to disk. Cancel a query or let the 30-second timeout stop it.
+- Use the system's light or dark appearance and keyboard shortcuts: **⌘↵** Run, **⇧⌘↵** Explain, **⌘.** Stop.
 
-Main flow:
+## Download
 
-```
-open table → explore data → write SQL → see plan → understand the decision → change query/index → compare result
-```
+**Experimental v0.1 · macOS 13 or newer.** Choose the asset for your Mac from [GitHub Releases](https://github.com/Davi-Gurgel/pglearn/releases/latest):
 
-## Roadmap
+| Mac                          | Download                  |
+| ---------------------------- | ------------------------- |
+| Apple Silicon (M1 and newer) | `pglearn-0.1.0-arm64.dmg` |
+| Intel                        | `pglearn-0.1.0-x64.dmg`   |
 
-| Milestone  | Scope                                                                     |
-| ---------- | ------------------------------------------------------------------------- |
-| v0.1 (MVP) | SQL Editor, Plan Explorer, Node Inspector, Estimated vs Actual, Safe mode |
-| v0.2       | Plan Compare                                                              |
-| Later      | Database Explorer, Table Viewer                                           |
+Open the DMG and drag **pglearn** into **Applications**. ZIPs and SHA-256 checksums are also provided. PostgreSQL is a separate server; it is not bundled with the app.
 
-## Development
+This first release is **unsigned and not notarized**. macOS may block its first launch. After verifying that the download came from this repository, follow [Apple's instructions for opening an app from an unidentified developer](https://support.apple.com/en-us/102445). Signing and notarization are not configured yet.
 
-Start a local PostgreSQL with the [Pagila](https://github.com/devrimgunduz/pagila) sample database (requires Docker):
+## Try it with Pagila
+
+The example queries use [Pagila](https://github.com/devrimgunduz/pagila), a fictional film-rental database. With Docker installed, clone this repository and run:
 
 ```sh
-./db/fetch-pagila.sh   # once: downloads the sample data into db/init/
+git clone https://github.com/Davi-Gurgel/pglearn.git
+cd pglearn
+./db/fetch-pagila.sh
 docker compose up -d
 ```
 
-Connect with `postgres://postgres:postgres@localhost:5432/pagila`, or open a shell:
+Wait until PostgreSQL finishes loading the sample data, then connect from the app using:
 
-```sh
-docker compose exec postgres psql -U postgres -d pagila
+```text
+postgres://postgres:postgres@localhost:5432/pagila
 ```
 
-The sample data loads only on first start. To reset the database: `docker compose down -v && docker compose up -d`.
+Pick **Joins: who rented what**, press **Explain**, and click a **Nested Loop** node. It repeatedly runs its inner input for each row from its outer input; the inspector shows why rows per loop and total rows are different.
 
-Run the app (Node 24 and pnpm):
+The container listens only on this Mac. The credentials above are public sample credentials. To remove the sample database and its data, run `docker compose down -v`.
+
+## Query behavior and current limits
+
+**Run executes your SQL normally, including writes. Explain also executes the statement**, but wraps it in a transaction that is always rolled back. Rollback restores table changes; it does **not** restore sequence values, remove dead row versions, or undo external effects of functions. Explain is not a sandbox. Use a disposable database while learning.
+
+- One connection and one statement at a time. Session settings and explicit `BEGIN` / `COMMIT` / `ROLLBACK` carry across runs. Finish your own transaction before using Explain.
+- Results are fetched into memory in the main process; pagination limits rendering, not the database query. Avoid unbounded queries on large tables.
+- Duplicate column names need aliases (`AS`). Cast infinite or out-of-range timestamps to `text` to display them.
+- The bundled examples and automated integration tests use PostgreSQL 18. Other server versions have not been validated.
+- No data editing UI, saved query library, multiple connections, or plan comparison yet. Plan comparison is the next candidate.
+
+## Why I built it
+
+I'm learning PostgreSQL and exploring how to build software with coding agents. I wanted a client that helps me understand the database's choices: when an index helps, how joins move rows, and when an estimate is misleading. The explanations are written into the app; there is no AI service or API key to configure.
+
+The project deliberately keeps the plumbing small so most of the attention can go to explaining plans.
+
+## Development
+
+Requires **Node.js 24+** and **pnpm** (the pinned version is in `package.json`). Docker is needed only for the sample database and integration tests.
 
 ```sh
 pnpm install
-pnpm dev        # opens the Electron window; the renderer is also at http://localhost:5173
+pnpm dev             # Electron app + renderer at http://localhost:5173
 pnpm typecheck
-pnpm lint       # oxlint
-pnpm format     # oxfmt; CI runs `pnpm format --check`
-pnpm build
+pnpm lint
+pnpm format --check
+pnpm test            # plan interpretation and value conversion
+pnpm test:e2e        # real Electron + PostgreSQL; start Pagila first
+pnpm dist:mac        # DMG + ZIP for Apple Silicon and Intel, in release/
 ```
 
-## Branching and releases
+Connect through the app, or set `DATABASE_URL` before starting it. A connection previously saved by the app takes precedence. The plain-browser renderer previews the UI with database actions disabled.
 
-- `main` is always stable and only receives changes through pull requests.
-- Work happens in short-lived branches (`feat/...`, `fix/...`, `docs/...`).
-- Releases are git tags (`v0.1.0`, ...) published as GitHub Releases.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+**Electron + React + TypeScript**, built with electron-vite. Effect and the PostgreSQL driver run in the main process; the renderer uses a small typed IPC bridge. The plan graph uses HTML cards and SVG edges without a graph library. See [the architecture](docs/architecture.md) for the process boundaries and [CONTRIBUTING.md](CONTRIBUTING.md) for development and release checks.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Pagila is downloaded separately and retains its [upstream license](https://github.com/devrimgunduz/pagila/blob/master/LICENSE.txt).

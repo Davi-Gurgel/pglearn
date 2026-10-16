@@ -11,6 +11,18 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pagila
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pagila"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -20,9 +32,19 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      # Skips our postinstall, which downloads the Electron app. Nothing here runs it.
-      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm format --check
       - run: pnpm typecheck
       - run: pnpm build
+      - run: pnpm test
+      - name: Load sample database
+        env:
+          PGPASSWORD: postgres
+        run: |
+          ./db/fetch-pagila.sh
+          psql -h localhost -U postgres -d pagila -v ON_ERROR_STOP=1 -f db/init/01-schema.sql
+          psql -h localhost -U postgres -d pagila -v ON_ERROR_STOP=1 -f db/init/02-data.sql
+      - name: Install Electron system dependencies
+        run: pnpm exec playwright install-deps chromium
+      - run: xvfb-run -a pnpm exec playwright test

@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.desktop.json",
+  "compilerOptions": { "allowImportingTsExtensions": true },
+  "include": ["tests", "playwright.config.ts", "src/web/vite-env.d.ts"]
+}

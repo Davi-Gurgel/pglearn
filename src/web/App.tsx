@@ -1,14 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DbError, ExplainResult, PingResult, QueryResult } from "../contracts/ipc";
+import type {
+  DbError,
+  DesktopBridge,
+  ExplainResult,
+  PingResult,
+  QueryResult,
+  RowsResult,
+} from "../contracts/ipc";
+import { ConnectionSheet } from "./ConnectionSheet";
 import { examples } from "./examples";
+import { PageIcon, PlanIcon, PlayIcon, SidebarIcon, StopIcon } from "./icons";
 import { PlanView } from "./PlanView";
+import { Sidebar } from "./Sidebar";
 import { sqlstateClass, sqlstateDocs } from "./sqlstate";
 
 // What the last Run or Explain returned, with the SQL that produced it. `id`
-// tells two results apart, so a new plan starts with nothing selected.
+// tells two results apart, so a new plan starts with nothing selected. `ms` is
+// the round trip as the app saw it: the query plus fetching the rows.
 type Outcome =
-  | { id: number; sql: string; kind: "query"; result: QueryResult }
-  | { id: number; sql: string; kind: "explain"; result: ExplainResult };
+  | { id: number; sql: string; ms: number; kind: "query"; result: QueryResult }
+  | { id: number; sql: string; ms: number; kind: "explain"; result: ExplainResult };
 
 type Action = "query" | "explain";
 
@@ -26,6 +37,9 @@ export function App() {
   const [pending, setPending] = useState<{ action: Action; since: number } | null>(null);
   const [canceling, setCanceling] = useState(false);
   const nextId = useRef(0);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [editorHeight, setEditorHeight] = useState(180);
 
   const checkConnection = useCallback(() => {
     void bridge
@@ -37,191 +51,283 @@ export function App() {
     setPing("pending");
     checkConnection();
   };
-  // Connect on open, so the header says right away whether Postgres is there.
+  // Connect on open, so the sidebar says right away whether Postgres is there.
   useEffect(checkConnection, [checkConnection]);
 
-  const start = (action: Action) => {
-    if (!bridge || pending || sql.trim() === "") return;
-    setPending({ action, since: performance.now() });
+  const start = (action: Action, text = sql) => {
+    if (!bridge || pending || sheetOpen || text.trim() === "") return;
+    const since = performance.now();
+    setPending({ action, since });
     setCanceling(false);
-    const ran = sql;
     const id = ++nextId.current;
     const done = (outcome: Outcome) => {
+      if (id !== nextId.current) return;
       setResult(outcome);
       setPending(null);
-      // A query that worked proves the connection is back; refresh the header.
+      // A query that worked proves the connection is back; refresh the sidebar.
       if (outcome.result.ok && ping !== "pending" && !ping?.ok) connect();
     };
     if (action === "query") {
       void bridge
-        .query(ran)
+        .query(text)
         .catch((error: unknown): QueryResult => ({ ok: false, error: unexpected(error) }))
-        .then((result) => done({ id, sql: ran, kind: "query", result }));
+        .then((result) =>
+          done({ id, sql: text, ms: performance.now() - since, kind: "query", result }),
+        );
     } else {
       void bridge
-        .explain(ran)
+        .explain(text)
         .catch((error: unknown): ExplainResult => ({ ok: false, error: unexpected(error) }))
-        .then((result) => done({ id, sql: ran, kind: "explain", result }));
+        .then((result) =>
+          done({ id, sql: text, ms: performance.now() - since, kind: "explain", result }),
+        );
     }
   };
+  const stop = () => {
+    if (!pending || canceling) return;
+    setCanceling(true);
+    void bridge?.cancel();
+  };
 
+  // The shortcuts work wherever the focus is, not only in the editor. ⌘. is
+  // the Mac's own "stop" (it cancels a build in Xcode, a dialog anywhere).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || sheetOpen) return;
+      if (event.key === "Enter") {
+        event.preventDefault();
+        start(event.shiftKey ? "explain" : "query");
+      } else if (event.key === ".") {
+        event.preventDefault();
+        stop();
+      } else if (event.key === "s" && event.ctrlKey && event.metaKey) {
+        // ⌃⌘S: Finder's and Mail's shortcut for the sidebar.
+        event.preventDefault();
+        setSidebarOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  const idle = bridge !== undefined && pending === null;
+  // Right of the traffic lights, where Xcode keeps it: in the sidebar's title
+  // bar while it is open, in the toolbar once it is closed, at the same spot.
+  // It has to sit inside the drag region it overlaps: Electron applies drag
+  // and no-drag regions in document order, so a drag region later in the page
+  // would swallow the clicks of a button placed before it.
+  const sidebarToggle = (
+    <button
+      className="icon-button"
+      onClick={() => setSidebarOpen(!sidebarOpen)}
+      title={`${sidebarOpen ? "Hide" : "Show"} the sidebar (⌃⌘S)`}
+    >
+      <SidebarIcon />
+    </button>
+  );
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <Logo />
-          pglearn
-        </div>
-        <Connection available={Boolean(bridge)} ping={ping} onRetry={connect} />
-      </header>
+    <div className={sidebarOpen ? "app" : "app sidebar-closed"}>
+      {/* Keep the catalog and its selection when the sidebar is hidden. */}
+      <Sidebar
+        bridge={bridge}
+        ping={ping}
+        sql={sql}
+        onConnection={() => {
+          if (!pending) setSheetOpen(true);
+        }}
+        onPick={(text, run) => {
+          setSql(text);
+          if (run) start("query", text);
+        }}
+      >
+        {sidebarToggle}
+      </Sidebar>
 
-      <section className="editor">
-        <textarea
-          aria-label="SQL"
-          value={sql}
-          onChange={(event) => setSql(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-              event.preventDefault();
-              start(event.shiftKey ? "explain" : "query");
-            }
+      <main className="main">
+        <header className="toolbar">
+          {!sidebarOpen && sidebarToggle}
+          <Title available={bridge !== undefined} ping={ping} />
+          <div className="toolbar-group">
+            <button
+              className="tool"
+              disabled={pending === null || canceling}
+              onClick={stop}
+              title={`Stop the running query (${mod}.)`}
+              aria-label="Stop"
+            >
+              <StopIcon />
+            </button>
+            <button
+              className="tool run"
+              disabled={!idle}
+              onClick={() => start("query")}
+              title={`Run the SQL and show the rows it returns (${mod}↵)`}
+            >
+              <PlayIcon />
+              Run
+            </button>
+            <button
+              className="tool explain"
+              disabled={!idle}
+              onClick={() => start("explain")}
+              title={`Run the SQL under EXPLAIN ANALYZE, then roll back, and draw the plan (⇧${mod}↵)`}
+            >
+              <PlanIcon />
+              Explain
+            </button>
+          </div>
+        </header>
+
+        <section className="editor" style={{ height: editorHeight }}>
+          <Editor sql={sql} onChange={setSql} />
+        </section>
+        <Splitter height={editorHeight} onResize={setEditorHeight} />
+
+        <section className="output">
+          {pending ? (
+            <Running action={pending.action} since={pending.since} canceling={canceling} />
+          ) : result === null ? (
+            <Welcome
+              available={Boolean(bridge)}
+              ping={ping}
+              onRetry={connect}
+              onConnection={() => {
+                if (!pending) setSheetOpen(true);
+              }}
+            />
+          ) : !result.result.ok ? (
+            <ErrorReport error={result.result.error} sql={result.sql} />
+          ) : result.kind === "query" ? (
+            <Results key={result.id} bridge={bridge!} result={result.result} ms={result.ms} />
+          ) : (
+            <PlanView key={result.id} explain={result.result.plan} />
+          )}
+        </section>
+      </main>
+
+      {sheetOpen && bridge && (
+        <ConnectionSheet
+          bridge={bridge}
+          onClose={() => setSheetOpen(false)}
+          onConnected={(connected) => {
+            setSheetOpen(false);
+            setPing(connected);
+            // Results from the previous database no longer apply.
+            nextId.current++;
+            setPending(null);
+            setResult(null);
           }}
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
         />
-        <div className="toolbar">
-          <button
-            className="primary"
-            disabled={!bridge || pending !== null}
-            onClick={() => start("query")}
-            title="Run the SQL and show the rows it returns"
-          >
-            Run <kbd>{mod}↵</kbd>
-          </button>
-          <button
-            className="explain"
-            disabled={!bridge || pending !== null}
-            onClick={() => start("explain")}
-            title="Run the SQL under EXPLAIN ANALYZE, then roll back, and draw the plan"
-          >
-            Explain <kbd>⇧{mod}↵</kbd>
-          </button>
-          <select
-            aria-label="Load an example query"
-            value=""
-            onChange={(event) => {
-              const example = examples[Number(event.target.value)];
-              if (example) setSql(example.sql);
-            }}
-          >
-            <option value="" disabled>
-              Load an example…
-            </option>
-            {examples.map((example, i) => (
-              <option key={example.title} value={i}>
-                {example.title}
-              </option>
-            ))}
-          </select>
-        </div>
-      </section>
-
-      <section className="output">
-        {pending ? (
-          <Running
-            action={pending.action}
-            since={pending.since}
-            canceling={canceling}
-            onCancel={() => {
-              setCanceling(true);
-              void bridge?.cancel();
-            }}
-          />
-        ) : result === null ? (
-          <Welcome available={Boolean(bridge)} ping={ping} />
-        ) : !result.result.ok ? (
-          <ErrorReport error={result.result.error} sql={result.sql} />
-        ) : result.kind === "query" ? (
-          <Results result={result.result} />
-        ) : (
-          <PlanView key={result.id} explain={result.result.plan} />
-        )}
-      </section>
+      )}
     </div>
   );
 }
 
-// Three nodes and two edges: a plan, which is what this app is about.
-function Logo() {
+// The window's title, in the toolbar like Mail's: the database, and under it
+// which server it is.
+function Title({ available, ping }: { available: boolean; ping: PingResult | "pending" | null }) {
+  const [title, subtitle] = !available
+    ? ["pglearn", "No database in a browser"]
+    : ping === null || ping === "pending"
+      ? ["pglearn", "Connecting…"]
+      : !ping.ok
+        ? ["pglearn", "Not connected"]
+        : [
+            ping.database,
+            `${/^PostgreSQL \S+/.exec(ping.version)?.[0] ?? "PostgreSQL"} on ${ping.server}`,
+          ];
   return (
-    <svg className="logo" viewBox="0 0 20 20" aria-hidden>
-      <path d="M10,6 L5,14 M10,6 L15,14" />
-      <circle cx="10" cy="5" r="3" />
-      <circle cx="5" cy="15" r="3" />
-      <circle cx="15" cy="15" r="3" />
-    </svg>
+    <div className="title">
+      <div className="title-main">{title}</div>
+      <div className="title-sub">{subtitle}</div>
+    </div>
   );
 }
 
-function Connection({
+// A plain textarea with line numbers beside it, like DBeaver's editor. Lines
+// do not wrap, so each number stays next to its line; Postgres's error
+// positions ("LINE 3") can be read off the gutter.
+function Editor({ sql, onChange }: { sql: string; onChange: (sql: string) => void }) {
+  const gutter = useRef<HTMLPreElement>(null);
+  const lines = sql.split("\n").length;
+  return (
+    <div className="code">
+      <pre className="gutter" ref={gutter} aria-hidden>
+        {Array.from({ length: lines }, (_, i) => i + 1).join("\n")}
+      </pre>
+      <textarea
+        aria-label="SQL"
+        value={sql}
+        onChange={(event) => onChange(event.target.value)}
+        onScroll={(event) => {
+          if (gutter.current) gutter.current.scrollTop = event.currentTarget.scrollTop;
+        }}
+        onKeyDown={(event) => {
+          // Tab indents, as in any code editor. insertText, unlike setting the
+          // value, keeps ⌘Z working.
+          if (event.key === "Tab" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
+            event.preventDefault();
+            document.execCommand("insertText", false, "  ");
+          }
+        }}
+        wrap="off"
+        spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
+      />
+    </div>
+  );
+}
+
+// The bar between the editor and the output; drag it to give either more room.
+function Splitter({ height, onResize }: { height: number; onResize: (height: number) => void }) {
+  return (
+    <div
+      className="splitter"
+      role="separator"
+      aria-orientation="horizontal"
+      onPointerDown={(event) => {
+        const handle = event.currentTarget;
+        const from = event.clientY - height;
+        handle.setPointerCapture(event.pointerId);
+        const move = (moved: PointerEvent) =>
+          onResize(Math.min(Math.max(moved.clientY - from, 60), window.innerHeight - 200));
+        handle.addEventListener("pointermove", move);
+        handle.addEventListener(
+          "pointerup",
+          () => handle.removeEventListener("pointermove", move),
+          { once: true },
+        );
+      }}
+    />
+  );
+}
+
+function Welcome({
   available,
   ping,
   onRetry,
+  onConnection,
 }: {
   available: boolean;
   ping: PingResult | "pending" | null;
   onRetry: () => void;
+  onConnection: () => void;
 }) {
-  if (!available) {
-    return (
-      <span className="connection" data-state="off">
-        <span className="dot" />
-        No database in a plain browser: open the desktop app
-      </span>
-    );
-  }
-  if (ping === null || ping === "pending") {
-    return (
-      <span className="connection" data-state="pending">
-        <span className="dot" />
-        Connecting…
-      </span>
-    );
-  }
-  if (!ping.ok) {
-    return (
-      <button className="connection" data-state="error" onClick={onRetry} title="Try again">
-        <span className="dot" />
-        Not connected. Try again
-      </button>
-    );
-  }
-  // "PostgreSQL 18.0 (Debian 18.0-1.pgdg13+1) on aarch64-unknown-linux-gnu, ..."
-  const short = /^PostgreSQL \S+/.exec(ping.version)?.[0] ?? ping.version;
-  return (
-    <button
-      className="connection"
-      data-state="ok"
-      onClick={onRetry}
-      title={`${ping.version}\nBackend process ${ping.pid}. Click to check again.`}
-    >
-      <span className="dot" />
-      <span className="connection-db">{ping.database}</span>
-      <span className="muted">{short}</span>
-    </button>
-  );
-}
-
-function Welcome({ available, ping }: { available: boolean; ping: PingResult | "pending" | null }) {
   if (ping !== null && ping !== "pending" && !ping.ok) {
     return (
       <div className="welcome">
         <h2>Postgres is not answering</h2>
         <p>
-          The app connects to <code>DATABASE_URL</code>, or to the local Pagila database from{" "}
-          <code>compose.yaml</code>. Start it with <code>docker compose up -d</code> and try again.
+          Start the server and try again, or connect to another database. The sample Pagila database
+          in this repository starts with <code>docker compose up -d</code>.
         </p>
+        <div className="welcome-buttons">
+          <button onClick={onRetry}>Try again</button>
+          <button className="default" onClick={onConnection}>
+            Connect to a database…
+          </button>
+        </div>
         <ErrorReport error={ping.error} sql="" />
       </div>
     );
@@ -231,11 +337,17 @@ function Welcome({ available, ping }: { available: boolean; ping: PingResult | "
       <h2>Ask Postgres how it runs a query</h2>
       <div className="welcome-steps">
         <div>
-          <strong>Run</strong>
+          <span>
+            <strong>Run</strong>
+            <kbd>{mod}↵</kbd>
+          </span>
           <p>executes the SQL and shows the rows it returns, like any client.</p>
         </div>
         <div>
-          <strong>Explain</strong>
+          <span>
+            <strong>Explain</strong>
+            <kbd>⇧{mod}↵</kbd>
+          </span>
           <p>
             executes it under <code>EXPLAIN ANALYZE</code> and draws the plan Postgres chose: which
             tables it read, how it joined them, and how many rows it expected at each step compared
@@ -257,12 +369,10 @@ function Running({
   action,
   since,
   canceling,
-  onCancel,
 }: {
   action: Action;
   since: number;
   canceling: boolean;
-  onCancel: () => void;
 }) {
   const [now, setNow] = useState(since);
   useEffect(() => {
@@ -272,14 +382,15 @@ function Running({
   return (
     <div className="running">
       <span className="spinner" aria-hidden />
-      <span>
-        {action === "query" ? "Running" : "Explaining"}{" "}
-        <span className="tabular">{((now - since) / 1000).toFixed(1)} s</span>
-      </span>
-      <button disabled={canceling} onClick={onCancel}>
-        {canceling ? "Canceling…" : "Cancel"}
-      </button>
-      <span className="muted">The app stops any query after 30 s.</span>
+      <div>
+        <div>
+          {canceling ? "Stopping" : action === "query" ? "Running" : "Explaining"}{" "}
+          <span className="tabular">{((now - since) / 1000).toFixed(1)} s</span>
+        </div>
+        <div className="muted">
+          Press <kbd>{mod}.</kbd> to stop it. Queries also stop on their own after 30 s.
+        </div>
+      </div>
     </div>
   );
 }
@@ -296,33 +407,111 @@ const numericTypes = new Set([
   "money",
 ]);
 
-function Results({ result }: { result: Extract<QueryResult, { ok: true }> }) {
+// Rows per page of the grid. More would make the page slow to draw; the rest of
+// the result waits in the main process, a click away.
+const pageSize = 200;
+
+function Results({
+  bridge,
+  result,
+  ms,
+}: {
+  bridge: DesktopBridge;
+  result: Extract<QueryResult, { ok: true }>;
+  ms: number;
+}) {
+  const [page, setPage] = useState(0);
+  // The page on screen. While the next one loads, the last one stays up.
+  const [loaded, setLoaded] = useState<{ page: number; rows: RowsResult } | null>(null);
+  const grid = useRef<HTMLDivElement>(null);
+  const hasGrid = result.columns.length > 0;
+  useEffect(() => {
+    if (!hasGrid) return;
+    let current = true;
+    void bridge
+      .rows(result.resultId, page * pageSize, pageSize)
+      .catch((error: unknown): RowsResult => ({ ok: false, error: unexpected(error) }))
+      .then((rows) => {
+        if (current) setLoaded({ page, rows });
+      });
+    return () => {
+      current = false;
+    };
+  }, [bridge, result.resultId, page, hasGrid]);
+
   // INSERT / UPDATE / DELETE without RETURNING: no columns, so no grid.
-  if (result.columns.length === 0) {
+  if (!hasGrid) {
     return (
-      <div className="summary-line">
-        <code>
-          {result.command} {result.rowCount}
-        </code>
-        <span className="muted">
-          {result.rowCount === 1 ? "1 row" : `${result.rowCount.toLocaleString("en-US")} rows`}{" "}
-          affected
-        </span>
+      <div className="results">
+        <div className="summary-line">
+          <code>
+            {result.command} {result.rowCount}
+          </code>
+          <span>{rows(result.rowCount)} affected</span>
+          <span className="summary-time">{duration(ms)}</span>
+        </div>
+        <p className="empty-rows">
+          {result.command} returns no rows. Add <code>RETURNING *</code> to see the rows it changed.
+        </p>
       </div>
     );
   }
 
   const numeric = result.columns.map((column) => numericTypes.has(column.type));
+  const pages = Math.ceil(result.totalRows / pageSize);
+  const from = (loaded?.page ?? 0) * pageSize;
+  const shown = loaded?.rows.ok ? loaded.rows.rows : [];
+  const goTo = (to: number) => {
+    setPage(to);
+    grid.current?.scrollTo({ top: 0 });
+  };
   return (
     <div className="results">
       <div className="summary-line">
-        {result.rows.length < result.totalRows
-          ? `Showing the first ${result.rows.length} of ${result.totalRows.toLocaleString("en-US")} rows`
-          : result.totalRows === 1
-            ? "1 row"
-            : `${result.totalRows.toLocaleString("en-US")} rows`}
+        <span>{rows(result.totalRows)}</span>
+        {pages > 1 && (
+          <div className="pager">
+            <button
+              className="icon-button"
+              disabled={page === 0}
+              onClick={() => goTo(0)}
+              aria-label="First page"
+            >
+              <PageIcon to="first" />
+            </button>
+            <button
+              className="icon-button"
+              disabled={page === 0}
+              onClick={() => goTo(page - 1)}
+              aria-label="Previous page"
+            >
+              <PageIcon to="previous" />
+            </button>
+            <span className="tabular">
+              {(page * pageSize + 1).toLocaleString("en-US")}–
+              {Math.min((page + 1) * pageSize, result.totalRows).toLocaleString("en-US")}
+            </span>
+            <button
+              className="icon-button"
+              disabled={page === pages - 1}
+              onClick={() => goTo(page + 1)}
+              aria-label="Next page"
+            >
+              <PageIcon to="next" />
+            </button>
+            <button
+              className="icon-button"
+              disabled={page === pages - 1}
+              onClick={() => goTo(pages - 1)}
+              aria-label="Last page"
+            >
+              <PageIcon to="last" />
+            </button>
+          </div>
+        )}
+        <span className="summary-time">{duration(ms)}</span>
       </div>
-      <div className="grid-wrap">
+      <div className="grid-wrap" ref={grid}>
         <table className="grid">
           <thead>
             <tr>
@@ -336,9 +525,9 @@ function Results({ result }: { result: Extract<QueryResult, { ok: true }> }) {
             </tr>
           </thead>
           <tbody>
-            {result.rows.map((row, r) => (
-              <tr key={r}>
-                <td className="row-number">{r + 1}</td>
+            {shown.map((row, r) => (
+              <tr key={from + r}>
+                <td className="row-number">{from + r + 1}</td>
                 {row.map((cell, c) => (
                   <td key={c} className={numeric[c] ? "numeric" : undefined} title={cell ?? "NULL"}>
                     {cell === null ? <span className="null">NULL</span> : cell}
@@ -348,11 +537,17 @@ function Results({ result }: { result: Extract<QueryResult, { ok: true }> }) {
             ))}
           </tbody>
         </table>
-        {result.rows.length === 0 && <p className="empty-rows">No rows matched.</p>}
+        {result.totalRows === 0 && <p className="empty-rows">No rows matched.</p>}
+        {loaded && !loaded.rows.ok && <ErrorReport error={loaded.rows.error} sql="" />}
       </div>
     </div>
   );
 }
+
+const rows = (n: number) => (n === 1 ? "1 row" : `${n.toLocaleString("en-US")} rows`);
+
+const duration = (ms: number) =>
+  ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(2)} s`;
 
 function unexpected(error: unknown): DbError {
   return { kind: "client", message: error instanceof Error ? error.message : String(error) };
@@ -363,15 +558,16 @@ function ErrorReport({ error, sql }: { error: DbError; sql: string }) {
   if (error.kind === "canceled") {
     return (
       <div className="notice">
-        <strong>Canceled.</strong> Postgres stopped the query.
+        <div>Stopped</div>
+        <div className="muted">Postgres canceled the query before it finished.</div>
       </div>
     );
   }
   if (error.kind === "timeout") {
     return (
       <div className="notice">
-        <strong>Canceled after {error.seconds} seconds</strong>, the app&apos;s time limit for one
-        query.
+        <div>Stopped after {error.seconds} s</div>
+        <div className="muted">That is the app&apos;s time limit for one query.</div>
       </div>
     );
   }

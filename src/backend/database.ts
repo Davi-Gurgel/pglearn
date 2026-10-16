@@ -1,7 +1,6 @@
 import { PgClient, type PgConnection } from "@effect/sql-pg";
 import {
   Cause,
-  Config,
   Duration,
   Effect,
   Exit,
@@ -12,10 +11,20 @@ import {
   Semaphore,
 } from "effect";
 import { SqlError } from "effect/sql/SqlError";
-import type { DbError, Explain, ExplainResult, PingResult, QueryResult } from "../contracts/ipc";
+import type {
+  DbError,
+  Explain,
+  ExplainResult,
+  PingResult,
+  QueryResult,
+  RowsResult,
+  Table,
+  TablesResult,
+} from "../contracts/ipc";
 import { toText } from "./query-cell";
 
-// The local database from compose.yaml. Set DATABASE_URL to use another one.
+// The local database from compose.yaml, used unless DATABASE_URL names another
+// or the user connects somewhere else from the app.
 const defaultUrl = "postgres://postgres:postgres@localhost:5432/pagila";
 
 // One session for the whole app, like psql: a BEGIN or SET from one Run is
@@ -27,14 +36,22 @@ const defaultUrl = "postgres://postgres:postgres@localhost:5432/pagila";
 // whatever transaction it had). Without the infinite idle timeout it would
 // close the session after a minute unused, and with it an open transaction.
 // `application_name` is how this app shows up in `pg_stat_activity`.
-const runtime = ManagedRuntime.make(
-  PgClient.layerConfig({
-    url: Config.Redacted("DATABASE_URL").pipe(Config.withDefault(Redacted.make(defaultUrl))),
-    applicationName: Config.succeed("pglearn"),
-    maxConnections: Config.succeed(1),
-    idleTimeout: Config.succeed(Duration.infinity),
-  }),
-);
+function makeRuntime(url: string) {
+  return ManagedRuntime.make(
+    PgClient.layer({
+      url: Redacted.make(url),
+      applicationName: "pglearn",
+      maxConnections: 1,
+      idleTimeout: Duration.infinity,
+    }),
+  );
+}
+
+// The database every call goes to. Connecting elsewhere swaps it whole.
+let current = (() => {
+  const url = process.env["DATABASE_URL"] || defaultUrl;
+  return { url, runtime: makeRuntime(url) };
+})();
 
 const ping = Effect.gen(function* () {
   const sql = yield* PgClient.PgClient;
@@ -44,11 +61,15 @@ const ping = Effect.gen(function* () {
   return row!;
 });
 
-// The grid shows at most this many rows. The driver still reads the whole
-// result: sql-pg always sends Execute with no row limit, so there is no way to
-// stop the server early without rewriting the user's SQL (which could change
-// its plan). Revisit if a real query makes the main process run out of memory.
-const shownRows = 200;
+// The last Run's rows stay here and the grid asks for them a page at a time
+// (`pageRows`), the way pgAdmin keeps a result on its server. The driver reads
+// the whole result anyway: sql-pg always sends Execute with no row limit, so
+// there is no way to stop the server early without rewriting the user's SQL
+// (which could change its plan) or holding the query open, and with it the
+// app's only connection. Only the last result is kept; the next Run replaces
+// it. Revisit if a real query makes the main process run out of memory.
+let kept: { id: number; result: PgConnection.Result } | undefined;
+let lastResultId = 0;
 
 // A result column only carries a type OID (23, 1184, ...). Postgres itself knows
 // the names: they live in the pg_type catalog.
@@ -79,15 +100,11 @@ const runSql = Effect.fn("runSql")(function* (text: string) {
   }
 
   const types = yield* typeNames(result.fields);
-  const rows = yield* Effect.try({
-    try: () =>
-      result.rows
-        .slice(0, shownRows)
-        .map((row) => result.fields.map((field) => toText(row[field.name]))),
-    catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
-  });
+  const id = ++lastResultId;
+  kept = { id, result };
   return {
     ok: true as const,
+    resultId: id,
     command: result.command,
     rowCount: result.rowCount,
     // Exact, because every row was read.
@@ -96,7 +113,6 @@ const runSql = Effect.fn("runSql")(function* (text: string) {
       name: field.name,
       type: types.get(field.dataTypeId) ?? String(field.dataTypeId),
     })),
-    rows,
   };
 });
 
@@ -196,7 +212,7 @@ async function runCancelable<A>(
   const controller = new AbortController();
   running = controller;
 
-  const exit = await runtime.runPromiseExit(
+  const exit = await current.runtime.runPromiseExit(
     effect.pipe(
       Effect.timeoutOrElse({
         duration: `${timeoutSeconds} seconds`,
@@ -222,14 +238,125 @@ export function cancelQuery(): void {
   running?.abort();
 }
 
-// IPC can only carry plain data, so errors become a value instead of a rejection.
-export function pingDatabase(): Promise<PingResult> {
-  return runtime.runPromise(
-    ping.pipe(
-      Effect.map((row) => ({ ok: true as const, ...row })),
+// One page of the last Run's rows, as text. Converting a page at a time also
+// means a value the grid cannot show fails only the page that holds it.
+export function pageRows(resultId: number, offset: number, count: number): RowsResult {
+  if (kept?.id !== resultId) {
+    return failed({
+      kind: "client",
+      message: "A newer query replaced these rows. Run this one again to see them.",
+    });
+  }
+  const { rows, fields } = kept.result;
+  try {
+    return {
+      ok: true,
+      rows: rows
+        .slice(offset, offset + count)
+        .map((row) => fields.map((field) => toText(row[field.name]))),
+    };
+  } catch (error) {
+    return failed({
+      kind: "client",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+// The tables of every user schema, read from Postgres's own catalog (the
+// pg_catalog tables describe all the others). Partitions are left out: the
+// partitioned table above them is the one queries name. reltuples is the row
+// count the last ANALYZE estimated, the same number the planner starts from;
+// -1 means the table was never analyzed. It waits for a running query instead
+// of canceling it, and leaves the kept result alone.
+const tablesSql = `select n.nspname as schema, c.relname as name, c.relkind as kind,
+  c.reltuples::float8 as estimate
+from pg_class c
+join pg_namespace n on n.oid = c.relnamespace
+where c.relkind in ('r', 'p', 'v', 'm')
+  and not c.relispartition
+  and n.nspname <> 'information_schema'
+  and n.nspname not like 'pg\\_%'
+order by 1, 2`;
+
+export function listTables(): Promise<TablesResult> {
+  return current.runtime.runPromise(
+    Effect.gen(function* () {
+      const sql = yield* PgClient.PgClient;
+      const tables = yield* sql.unsafe<Table>(tablesSql);
+      return { ok: true as const, tables: [...tables] };
+    }).pipe(
       Effect.catch((error) => Effect.succeed(failed(toDbError(error)))),
+      queryPermit.withPermit,
     ),
   );
+}
+
+// IPC can only carry plain data, so errors become a value instead of a rejection.
+export function pingDatabase(): Promise<PingResult> {
+  return pingWith(current);
+}
+
+async function pingWith(target: typeof current): Promise<PingResult> {
+  const server = serverOf(target.url);
+  try {
+    return await target.runtime.runPromise(
+      ping.pipe(
+        Effect.map((row) => ({ ok: true as const, ...row, server })),
+        Effect.catch((error) => Effect.succeed(failed(toDbError(error)))),
+      ),
+    );
+  } catch (error) {
+    // A defect, such as a connection string sql-pg cannot parse.
+    return failed({
+      kind: "client",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+// "localhost:5432", to tell databases with the same name apart.
+function serverOf(url: string): string {
+  try {
+    const { hostname, port } = new URL(url);
+    return `${hostname || "localhost"}:${port || "5432"}`;
+  } catch {
+    return "";
+  }
+}
+
+export function databaseUrl(): string {
+  return current.url;
+}
+
+// Switches to `url` without checking it first: for the saved connection at
+// startup, which should show as down if it is, not silently fall back.
+export function useDatabase(url: string): void {
+  void replace({ url, runtime: makeRuntime(url) });
+}
+
+// Switches to `url` only if Postgres answers there; otherwise the app stays on
+// the database it had.
+export async function connectDatabase(url: string): Promise<PingResult> {
+  if (!/^postgres(ql)?:\/\//.test(url)) {
+    return failed({
+      kind: "client",
+      message: "A connection string starts with postgres:// or postgresql://.",
+    });
+  }
+  const candidate = { url, runtime: makeRuntime(url) };
+  const result = await pingWith(candidate);
+  if (result.ok) await replace(candidate);
+  else await candidate.runtime.dispose();
+  return result;
+}
+
+async function replace(next: typeof current): Promise<void> {
+  const previous = current;
+  current = next;
+  kept = undefined;
+  running?.abort();
+  await previous.runtime.dispose();
 }
 
 type Failed = { ok: false; error: DbError };
@@ -261,7 +388,8 @@ function toDbError(error: SqlError | Error): DbError {
   if (cause?.severity === undefined || cause.code === undefined || cause.message === undefined) {
     // ECONNREFUSED comes with an empty message: keep the driver's own words too.
     const message = cause?.message || [error.message, cause?.code].filter(Boolean).join(": ");
-    return { kind: "client", message };
+    const meaning = cause?.code === undefined ? undefined : socketErrors[cause.code];
+    return { kind: "client", message: meaning ? `${meaning} (${message})` : message };
   }
   return {
     kind: "postgres",
@@ -272,6 +400,15 @@ function toDbError(error: SqlError | Error): DbError {
     position: cause.position,
   };
 }
+
+// What Node's socket errors mean when connecting, in plain words.
+const socketErrors: Record<string, string> = {
+  ECONNREFUSED:
+    "Nothing is listening at that host and port. Is the server, or its container, running?",
+  ENOTFOUND: "No host by that name was found.",
+  ETIMEDOUT: "The host did not answer in time.",
+  EHOSTUNREACH: "That host cannot be reached from this machine.",
+};
 
 // Hints for errors Postgres reports without one.
 function hintFor(code: string, message: string): string | undefined {
@@ -292,5 +429,5 @@ function hintFor(code: string, message: string): string | undefined {
 export function closeDatabase(): Promise<void> {
   // dispose interrupts the runtime's fibers and waits for their cleanup before
   // releasing the pool, including queries waiting for the permit.
-  return runtime.dispose();
+  return current.runtime.dispose();
 }

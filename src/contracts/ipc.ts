@@ -3,7 +3,15 @@
 export interface DesktopBridge {
   versions: { electron: string; chrome: string; node: string };
   ping(): Promise<PingResult>;
+  // The connection string in use, and a switch to another one. `connect`
+  // only switches if Postgres answers there, and then remembers it.
+  connection(): Promise<string>;
+  connect(url: string): Promise<PingResult>;
+  // The tables in the database, for the sidebar.
+  tables(): Promise<TablesResult>;
   query(sql: string): Promise<QueryResult>;
+  // Rows of the last query's result, a page at a time.
+  rows(resultId: number, offset: number, count: number): Promise<RowsResult>;
   // Runs the statement under EXPLAIN ANALYZE, so it really executes, in a
   // transaction that is always rolled back.
   explain(sql: string): Promise<ExplainResult>;
@@ -12,22 +20,38 @@ export interface DesktopBridge {
 }
 
 export type PingResult =
-  | { ok: true; version: string; database: string; pid: number }
+  // `server` is host:port, from the connection string.
+  | { ok: true; version: string; database: string; pid: number; server: string }
   | { ok: false; error: DbError };
 
-// Cells are already text (null stays null so the grid can show NULL). `rows` is
-// capped; `totalRows` is how many the query returned. `rowCount` is Postgres's
-// own count: rows affected by INSERT/UPDATE/DELETE, for which `columns` is empty.
+// No rows yet: they stay in the main process, and the grid asks for each page
+// with `rows`. `totalRows` is how many the query returned. `rowCount` is
+// Postgres's own count: rows affected by INSERT/UPDATE/DELETE, for which
+// `columns` is empty.
 export type QueryResult =
   | {
       ok: true;
+      resultId: number;
       command: string;
       rowCount: number;
       totalRows: number;
       columns: { name: string; type: string }[];
-      rows: (string | null)[][];
     }
   | { ok: false; error: DbError };
+
+// Cells are already text (null stays null so the grid can show NULL).
+export type RowsResult = { ok: true; rows: (string | null)[][] } | { ok: false; error: DbError };
+
+// `kind` is pg_class.relkind: r table, p partitioned table, v view, m
+// materialized view. `estimate` is pg_class.reltuples, -1 if never analyzed.
+export interface Table {
+  schema: string;
+  name: string;
+  kind: string;
+  estimate: number;
+}
+
+export type TablesResult = { ok: true; tables: Table[] } | { ok: false; error: DbError };
 
 export type ExplainResult = { ok: true; plan: Explain } | { ok: false; error: DbError };
 

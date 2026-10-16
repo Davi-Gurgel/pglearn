@@ -26,3 +26,8 @@ db/init/
 
 # Local plans (see AGENTS.md)
 docs/plans/
+
+# Packaging and browser tests
+release/
+test-results/
+playwright-report/

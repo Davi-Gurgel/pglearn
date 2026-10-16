@@ -56,7 +56,7 @@ export function PlanView({ explain }: { explain: Explain }) {
           <span className="muted">Execution</span> {ms(explain["Execution Time"])}
         </span>
         <details className="rolled-back">
-          <summary>{wrote ? "Changes rolled back" : "Ran in a rolled-back transaction"}</summary>
+          <summary>{wrote ? "Changes rolled back" : "Rolled back"}</summary>
           <div className="popover">
             <Paragraph explanation={rolledBack(wrote)} />
           </div>

@@ -1,20 +1,25 @@
 /* One stylesheet for the whole app. Colors are variables so the dark theme
-   only swaps values. Postgres's own blue is the accent; each node family has
-   a color of its own, used for its glyph, its card's edge and its diagram. */
+   only swaps values. The neutrals follow macOS's own; Postgres's blue is the
+   accent; each node family has a color of its own, used for its glyph, its
+   card's edge and its diagram. */
 
 :root {
   color-scheme: light dark;
-  --bg: #e8ecf1;
+  --bg: #f5f5f7;
   --surface: #ffffff;
-  --surface-2: #f3f5f8;
-  --ink: #17202c;
-  --ink-2: #445063;
-  --muted: #758093;
-  --line: #d3d9e1;
-  --grid-dot: #cdd4de;
+  --surface-2: #f4f4f6;
+  --sidebar: #e9e9ec;
+  --hover: rgb(0 0 0 / 0.05);
+  --selected: rgb(0 0 0 / 0.09);
+  --stripe: #f7f7f9;
+  --ink: #1d1d1f;
+  --ink-2: #48484d;
+  --muted: #86868b;
+  --line: #e2e2e6;
+  --grid-dot: #d4d4d9;
   --accent: #336791;
   --accent-soft: #dce8f3;
-  --edge: #9ba7b6;
+  --edge: #a1a1a8;
   --read: #336791;
   --combine: #7b4fb3;
   --transform: #b06d12;
@@ -26,23 +31,29 @@
   --off-soft: #fbecd2;
   --far: #c0392f;
   --far-soft: #f9dedb;
+  --run: #2f9e5b;
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --toolbar-height: 44px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #12171e;
-    --surface: #1a212b;
-    --surface-2: #212a36;
-    --ink: #e4e9ef;
-    --ink-2: #b3bdca;
-    --muted: #8590a0;
-    --line: #2d3744;
-    --grid-dot: #27303c;
+    --bg: #161618;
+    --surface: #1e1e20;
+    --surface-2: #262628;
+    --sidebar: #2a2a2d;
+    --hover: rgb(255 255 255 / 0.07);
+    --selected: rgb(255 255 255 / 0.12);
+    --stripe: #232325;
+    --ink: #ececef;
+    --ink-2: #b9b9bf;
+    --muted: #8a8a91;
+    --line: #333337;
+    --grid-dot: #2c2c30;
     --accent: #78a9d6;
     --accent-soft: #233446;
-    --edge: #5d6a7a;
+    --edge: #636369;
     --read: #78a9d6;
     --combine: #ab8be0;
     --transform: #dca457;
@@ -54,6 +65,7 @@
     --off-soft: #3d3020;
     --far: #f0827a;
     --far-soft: #452624;
+    --run: #4cc27a;
   }
 }
 
@@ -68,16 +80,29 @@ body,
   margin: 0;
 }
 
+/* Like a native app: chrome is not text to select, and the cursor stays an
+   arrow over buttons. Text worth copying opts back in. */
 body {
-  background: var(--bg);
+  background: var(--sidebar);
   color: var(--ink);
   font: 13px/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+textarea,
+pre,
+.grid td,
+.inspector p,
+.error,
+.notice,
+.welcome p {
+  user-select: text;
 }
 
 code,
 pre,
-kbd,
 textarea {
   font-family: var(--mono);
 }
@@ -91,6 +116,7 @@ code {
 
 a {
   color: var(--accent);
+  cursor: pointer;
 }
 
 h2,
@@ -120,8 +146,7 @@ select {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 4px 10px;
-  cursor: pointer;
+  padding: 3px 10px;
 }
 
 button:hover:not(:disabled),
@@ -130,155 +155,364 @@ select:hover {
 }
 
 button:disabled {
-  cursor: default;
-  opacity: 0.5;
+  opacity: 0.45;
 }
 
 kbd {
-  font-size: 11px;
-  opacity: 0.7;
-  margin-left: 4px;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--muted);
 }
 
-/* Layout: a header, the editor, and the output taking the rest. */
+.welcome-steps kbd {
+  margin-left: 6px;
+}
+
+.running kbd {
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--ink-2);
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon .filled {
+  fill: currentColor;
+}
+
+/* Layout: the sidebar, then the main column: toolbar, editor, splitter and
+   the output taking the rest. */
 
 .app {
   display: grid;
-  grid-template-rows: auto auto 1fr;
   /* minmax(0, ...) lets a wide results grid scroll instead of widening the page. */
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 4px;
+  padding: 4px;
   height: 100%;
 }
 
-.topbar {
+.app.sidebar-closed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sidebar-closed .sidebar {
+  display: none;
+}
+
+.main {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--line);
+  flex-direction: column;
+  min-height: 0;
   background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
 }
 
-.brand {
+/* The toolbar doubles as the window's title bar: dragging it moves the window.
+   Anything clickable inside must opt out, or clicks would start a drag. */
+.toolbar,
+.titlebar {
+  -webkit-app-region: drag;
+}
+
+.toolbar button,
+.titlebar button {
+  -webkit-app-region: no-drag;
+}
+
+/* --chrome-left is where the page's own controls start: past the traffic
+   lights in the desktop window, at the edge in a browser tab. */
+:root {
+  --chrome-left: 12px;
+}
+
+html.desktop {
+  --chrome-left: 84px;
+}
+
+.toolbar {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 700;
-  font-size: 14px;
-  letter-spacing: -0.01em;
+  gap: 12px;
+  height: var(--toolbar-height);
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid var(--line);
 }
 
-.logo {
-  width: 20px;
-  height: 20px;
-  stroke: var(--accent);
-  stroke-width: 1.6;
-  fill: var(--surface);
+/* With the sidebar hidden the traffic lights and the sidebar button sit on
+   the toolbar. */
+.sidebar-closed .toolbar {
+  padding-left: var(--chrome-left);
 }
 
-.connection {
+.title {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.title-main {
+  font-size: 13px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.title-sub {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toolbar-group {
+  display: flex;
+  gap: 2px;
+}
+
+.icon-button,
+button.tool {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   border: none;
   background: none;
   color: var(--ink-2);
+  border-radius: 6px;
   padding: 4px 8px;
 }
 
-.connection-db {
-  font-weight: 600;
-  color: var(--ink);
+button.tool {
+  padding: 4px 10px;
+  font-weight: 500;
 }
 
-.dot {
-  width: 8px;
-  height: 8px;
+.icon-button:hover:not(:disabled),
+button.tool:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.icon-button:active:not(:disabled),
+button.tool:active:not(:disabled) {
+  background: var(--line);
+}
+
+button.run .icon {
+  color: var(--run);
+}
+
+button.explain .icon {
+  color: var(--accent);
+}
+
+/* The sidebar: a navigator in the style of Finder's. Its top is empty, for
+   the traffic lights, and drags the window like the toolbar. */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--sidebar);
+}
+
+.titlebar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: var(--toolbar-height);
+  padding-left: var(--chrome-left);
+}
+
+.sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 10px 16px;
+}
+
+.section-title {
+  padding: 12px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.section-title:first-child {
+  padding-top: 0;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+}
+
+.tree-row .icon {
+  color: var(--accent);
+}
+
+.tree-row:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.tree-row[aria-current="true"] {
+  background: var(--selected);
+}
+
+.tree-row:focus-visible {
+  outline-offset: -2px;
+}
+
+.tree-row:disabled {
+  opacity: 1;
+}
+
+/* A schema's tables, indented to line up past its chevron. */
+.tree-row.nested {
+  padding-left: 42px;
+}
+
+.tree-row .chevron {
+  width: 12px;
+  height: 12px;
+  margin-right: -2px;
+  color: var(--muted);
+  stroke-width: 1.8;
+  transition: transform 0.12s;
+}
+
+.tree-row .chevron.open {
+  transform: rotate(90deg);
+}
+
+.tree-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-count {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-note {
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--muted);
+}
+
+.connection .dot {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--muted);
 }
 
 .connection[data-state="ok"] .dot {
   background: var(--close);
-  box-shadow: 0 0 0 3px var(--close-soft);
-}
-
-.connection[data-state="error"] .dot {
-  background: var(--far);
-  box-shadow: 0 0 0 3px var(--far-soft);
 }
 
 .connection[data-state="error"] {
   color: var(--far);
 }
 
-.editor {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 16px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
+.connection[data-state="error"] .dot {
+  background: var(--far);
 }
 
-.editor textarea {
-  height: 112px;
-  min-height: 52px;
-  max-height: 45vh;
-  resize: vertical;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-2);
-  color: var(--ink);
+/* The editor, with its line numbers, and the bar that resizes it. */
+
+.editor {
+  flex: none;
+  min-height: 60px;
+  display: flex;
+}
+
+.code {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.gutter,
+.code textarea {
+  margin: 0;
+  padding: 12px 0;
   font-size: 13px;
-  line-height: 1.55;
+  line-height: 20px;
+}
+
+.gutter {
+  flex: none;
+  min-width: 44px;
+  padding-right: 12px;
+  overflow: hidden;
+  text-align: right;
+  color: var(--muted);
+  user-select: none;
+}
+
+.code textarea {
+  flex: 1;
+  min-width: 0;
+  padding-left: 4px;
+  padding-right: 12px;
+  border: none;
+  outline: none;
+  resize: none;
+  background: none;
+  color: var(--ink);
   tab-size: 2;
 }
 
-.editor textarea:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+.splitter {
+  flex: none;
+  height: 9px;
+  margin: -4px 0;
+  position: relative;
+  z-index: 3;
+  cursor: row-resize;
 }
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.toolbar select {
-  margin-left: auto;
-  color: var(--ink-2);
-  max-width: 280px;
-}
-
-button.primary {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--surface);
-  font-weight: 600;
-}
-
-button.explain {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  font-weight: 600;
-}
-
-@media (prefers-color-scheme: dark) {
-  button.explain {
-    color: var(--bg);
-  }
+.splitter::after {
+  content: "";
+  position: absolute;
+  inset: 4px 0;
+  background: var(--line);
 }
 
 .output {
+  flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  background: var(--bg);
 }
 
 /* Empty, running and error states. */
@@ -302,7 +536,7 @@ button.explain {
 
 .welcome-steps > div {
   display: grid;
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: 116px 1fr;
   gap: 12px;
   align-items: baseline;
 }
@@ -314,9 +548,16 @@ button.explain {
 
 .running {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
-  padding: 16px;
+  max-width: 640px;
+  width: 100%;
+  margin: 48px auto;
+  padding: 0 24px;
+}
+
+.running .spinner {
+  margin-top: 3px;
 }
 
 .spinner {
@@ -340,8 +581,14 @@ button.explain {
   }
 }
 
-.error,
 .notice {
+  max-width: 640px;
+  width: 100%;
+  margin: 48px auto;
+  padding: 0 24px;
+}
+
+.error {
   margin: 16px;
   padding: 12px 16px;
   border-radius: 8px;
@@ -378,11 +625,43 @@ button.explain {
 }
 
 .summary-line {
+  flex: none;
   display: flex;
-  gap: 12px;
-  align-items: baseline;
-  padding: 8px 16px;
+  gap: 10px;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
   color: var(--ink-2);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+/* Pushed right, with the time after it. */
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.pager .tabular {
+  min-width: 96px;
+  text-align: center;
+}
+
+.pager .icon-button {
+  padding: 4px;
+}
+
+.pager + .summary-time {
+  margin-left: 12px;
+}
+
+.summary-time {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .grid-wrap {
@@ -390,7 +669,6 @@ button.explain {
   min-height: 0;
   overflow: auto;
   background: var(--surface);
-  border-top: 1px solid var(--line);
 }
 
 .grid {
@@ -404,7 +682,6 @@ button.explain {
 .grid td {
   padding: 4px 12px;
   border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
   white-space: nowrap;
   max-width: 360px;
   overflow: hidden;
@@ -416,7 +693,8 @@ button.explain {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
   font-family: var(--sans);
   vertical-align: bottom;
 }
@@ -438,10 +716,15 @@ button.explain {
   color: var(--muted);
 }
 
+/* Alternate rows are tinted, like macOS tables, instead of ruled. */
+.grid tbody tr:nth-child(even) td {
+  background: var(--stripe);
+}
+
 .grid .row-number {
   position: sticky;
   left: 0;
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--muted);
   text-align: right;
   min-width: 40px;
@@ -461,7 +744,8 @@ button.explain {
 }
 
 .empty-rows {
-  padding: 8px 16px;
+  margin: 0;
+  padding: 12px;
   color: var(--muted);
 }
 
@@ -475,10 +759,13 @@ button.explain {
 }
 
 .plan-bar {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 6px 16px;
+  min-height: 36px;
+  padding: 0 12px;
+  white-space: nowrap;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
 }
@@ -532,6 +819,7 @@ button.explain {
   z-index: 10;
   width: 380px;
   padding: 4px 14px;
+  white-space: normal;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -558,7 +846,7 @@ button.explain {
   padding: 16px 18px 24px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1200px) {
   .inspector {
     flex-basis: 300px;
   }
@@ -1047,4 +1335,147 @@ figcaption {
 
 .details dd:not(dt + dd) {
   grid-column: 1 / -1;
+}
+
+/* The connection sheet: a panel that drops from under the toolbar, as macOS
+   sheets do, over a dimmed window. */
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  color: var(--ink);
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: var(--toolbar-height);
+  background: rgb(0 0 0 / 0.18);
+}
+
+.sheet {
+  width: min(520px, calc(100% - 32px));
+  padding: 20px 20px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 0.28);
+  animation: sheet-in 0.18s ease-out;
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(-12px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet {
+    animation: none;
+  }
+}
+
+.sheet h2 {
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.sheet > p {
+  margin: 0 0 16px;
+}
+
+.fields {
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+}
+
+.field > span {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.field.wide {
+  grid-column: 1 / -1;
+}
+
+.field small {
+  font-size: 11px;
+}
+
+.field input {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  user-select: text;
+}
+
+.field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.field input::placeholder {
+  color: var(--muted);
+}
+
+.sheet .sheet-error {
+  margin: 14px 0 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--far);
+  background: var(--far-soft);
+  user-select: text;
+}
+
+.sheet-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.sheet-buttons small {
+  flex: 1;
+  font-size: 11px;
+}
+
+/* The default button: the one Return presses, filled like macOS's. */
+button.default {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 500;
+}
+
+@media (prefers-color-scheme: dark) {
+  button.default {
+    color: var(--bg);
+  }
+}
+
+.welcome-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
 }

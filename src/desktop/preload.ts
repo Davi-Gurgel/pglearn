@@ -8,7 +8,11 @@ const desktopBridge: DesktopBridge = {
     node: process.versions.node,
   },
   ping: () => ipcRenderer.invoke("db:ping"),
+  connection: () => ipcRenderer.invoke("db:connection"),
+  connect: (url) => ipcRenderer.invoke("db:connect", url),
+  tables: () => ipcRenderer.invoke("db:tables"),
   query: (sql) => ipcRenderer.invoke("db:query", sql),
+  rows: (resultId, offset, count) => ipcRenderer.invoke("db:rows", resultId, offset, count),
   explain: (sql) => ipcRenderer.invoke("db:explain", sql),
   cancel: () => ipcRenderer.invoke("db:cancel"),
 };

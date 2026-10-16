@@ -39,7 +39,7 @@ export const examples: Example[] = [
     sql: "select title, length\nfrom film\norder by length desc\nlimit 5",
   },
   {
-    title: "A write, safely rolled back",
-    sql: "delete from payment\nwhere amount > 10\nreturning payment_id, amount",
+    title: "DELETE: Run changes data",
+    sql: "-- Explain rolls this back. Run commits the delete.\ndelete from payment\nwhere amount > 10\nreturning payment_id, amount",
   },
 ];
