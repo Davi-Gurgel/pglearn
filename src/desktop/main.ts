@@ -41,7 +41,7 @@ function createWindow(): void {
     minHeight: 560,
     // Align native traffic lights with the 44px toolbar inside the 4px frame.
     titleBarStyle: "hidden",
-    trafficLightPosition: { x: 18, y: 18 },
+    trafficLightPosition: { x: 18, y: 19 },
     backgroundColor: "#e9e9ec",
     webPreferences: {
       preload: join(__dirname, "../preload/preload.js"),
