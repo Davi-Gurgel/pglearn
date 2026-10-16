@@ -162,9 +162,8 @@ test("switches connections only on success and expires the old result", async ()
 
 test("lines the toolbar up with the traffic lights", async () => {
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(900, 560));
-  // On macOS, the band Electron reports around the traffic lights
-  // (titleBarOverlay). Elsewhere, as in CI, the CSS falls back to a plain bar.
-  const band = process.platform === "darwin" ? { x: 98, height: 52 } : { x: 12, height: 52 };
+  // The band the traffic lights at {19, 19} sit centered in.
+  const band = { x: 98, height: 52 };
   const toggle = page.getByRole("button", { name: /the sidebar/ });
   for (const open of [true, false]) {
     const box = (await toggle.boundingBox())!;

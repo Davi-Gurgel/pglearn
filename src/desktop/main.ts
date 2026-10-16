@@ -47,13 +47,13 @@ function createWindow(): void {
     height: 900,
     minWidth: 900,
     minHeight: 560,
-    // The traffic lights are 14pt tall and 60pt wide. titleBarOverlay hands
-    // the page the band around them (2y + 14 = 52pt tall, ending 2x + 60 =
-    // 98pt in) as env(titlebar-area-*), so the toolbar follows from these two
-    // numbers instead of repeating them in CSS.
+    // The traffic lights are 14pt tall and 60pt wide, so at {19, 19} they sit
+    // centered in a 52pt band (2y + 14) that ends 98pt in (2x + 60): the
+    // toolbar's height and where the page's own controls start, in styles.css.
+    // (Electron's titleBarOverlay would report that band to the page, but it
+    // flickers between two positions while the window resizes.)
     titleBarStyle: "hidden",
     trafficLightPosition: { x: 19, y: 19 },
-    titleBarOverlay: process.platform === "darwin",
     backgroundColor: background(),
     webPreferences: {
       preload: join(__dirname, "../preload/preload.js"),

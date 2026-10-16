@@ -34,12 +34,15 @@
   --run: #2f9e5b;
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
-  /* The band around the traffic lights, as Electron reports it (see
-     titleBarOverlay in src/desktop/main.ts): its height, and where the page's
-     own controls can start. A browser tab, or a full-screen window where the
-     lights are hidden, gets the fallbacks: a plain bar from the edge. */
-  --toolbar-height: env(titlebar-area-height, 52px);
-  --chrome-left: env(titlebar-area-x, 12px);
+  /* The band the traffic lights sit centered in (trafficLightPosition in
+     src/desktop/main.ts derives it): its height, and where the page's own
+     controls start. In a browser tab they start at the edge. */
+  --toolbar-height: 52px;
+  --chrome-left: 12px;
+}
+
+html.desktop {
+  --chrome-left: 98px;
 }
 
 @media (prefers-color-scheme: dark) {
