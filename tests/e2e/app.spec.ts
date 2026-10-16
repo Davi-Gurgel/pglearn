@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -170,7 +170,8 @@ test("lines the toolbar up with the traffic lights", async () => {
     // The icon starts at the band's edge; the button has 8px of padding.
     expect(box.x + 8).toBe(band.x);
     expect(box.y + box.height / 2).toBe(band.height / 2);
-    expect(await page.locator(".toolbar").boundingBox()).toMatchObject({ y: 0, height: 52 });
+    const toolbar = (await page.locator(".toolbar").boundingBox())!;
+    expect(toolbar.y + toolbar.height / 2).toBe(band.height / 2);
     if (open) await toggle.click();
   }
   await expect(page.locator(".sidebar")).toBeHidden();
@@ -191,6 +192,25 @@ test("fills uncovered window with the main column's color in both themes", async
     );
     const [r, g, b] = [1, 3, 5].map((i) => parseInt(window.slice(i, i + 2), 16));
     expect(surface).toBe(`rgb(${r}, ${g}, ${b})`);
+  }
+  await app.evaluate(({ nativeTheme }) => {
+    nativeTheme.themeSource = "system";
+  });
+});
+
+test("switches the appearance from the toolbar and remembers it", async () => {
+  await page.emulateMedia({ colorScheme: null });
+  await app.evaluate(({ nativeTheme }) => {
+    nativeTheme.themeSource = "light";
+  });
+  for (const theme of ["dark", "light"] as const) {
+    await page
+      .getByRole("button", { name: `${theme === "dark" ? "Dark" : "Light"} appearance` })
+      .click();
+    await expect
+      .poll(() => page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches))
+      .toBe(theme === "dark");
+    expect(await readFile(join(userData, "theme"), "utf8")).toBe(theme);
   }
   await app.evaluate(({ nativeTheme }) => {
     nativeTheme.themeSource = "system";

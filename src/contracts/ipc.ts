@@ -17,7 +17,11 @@ export interface DesktopBridge {
   explain(sql: string): Promise<ExplainResult>;
   // Stops the running query, if any. Its `query` call then resolves as canceled.
   cancel(): Promise<void>;
+  // Light or dark instead of following macOS, remembered for the next launch.
+  setTheme(theme: Theme): Promise<void>;
 }
+
+export type Theme = "light" | "dark";
 
 export type PingResult =
   // `server` is host:port, from the connection string.

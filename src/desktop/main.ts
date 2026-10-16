@@ -22,6 +22,7 @@ import {
   useDatabase,
 } from "../backend/database";
 import { saveConnection, savedConnection } from "./connection";
+import { restoreTheme, setTheme } from "./theme";
 
 const rendererFile = join(__dirname, "../renderer/index.html");
 const devServerUrl = !app.isPackaged ? process.env["ELECTRON_RENDERER_URL"] : undefined;
@@ -144,6 +145,10 @@ handle("db:rows", (resultId: unknown, offset: unknown, count: unknown) => {
 });
 handle("db:explain", (sql: unknown) => explainDatabase(text(sql)));
 handle("db:cancel", () => cancelQuery());
+handle("app:theme", (theme: unknown) => {
+  if (theme !== "light" && theme !== "dark") throw new Error("Invalid theme.");
+  setTheme(theme);
+});
 
 void app.whenReady().then(() => {
   // safeStorage only works once the app is ready, and the window's first ping
@@ -154,6 +159,8 @@ void app.whenReady().then(() => {
   session.defaultSession.setPermissionCheckHandler(() => false);
   const saved = savedConnection();
   if (saved) useDatabase(saved);
+  // Before the window, so it opens in the picked theme instead of flashing.
+  restoreTheme();
   createWindow();
 
   // macOS: clicking the dock icon with no windows open should open one again.

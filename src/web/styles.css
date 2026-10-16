@@ -37,8 +37,13 @@
   /* The band the traffic lights sit centered in (trafficLightPosition in
      src/desktop/main.ts derives it): its height, and where the page's own
      controls start. In a browser tab they start at the edge. */
-  --toolbar-height: 52px;
+  --titlebar-height: 52px;
   --chrome-left: 12px;
+  /* The main column is a card set --frame in from the window's edges. Its
+     toolbar, inside the card's 1px border, is centered on the same line as
+     the traffic lights. */
+  --frame: 4px;
+  --toolbar-height: calc(var(--titlebar-height) - 2 * (var(--frame) + 1px));
 }
 
 html.desktop {
@@ -199,13 +204,14 @@ kbd {
 }
 
 /* Layout: the sidebar, then the main column: toolbar, editor, splitter and
-   the output taking the rest. Both reach the window's edges, as in Finder and
-   Xcode, so no inner corner has to follow the window's rounded ones. */
+   the output taking the rest. */
 
 .app {
   display: grid;
   /* minmax(0, ...) lets a wide results grid scroll instead of widening the page. */
   grid-template-columns: 240px minmax(0, 1fr);
+  gap: var(--frame);
+  padding: var(--frame);
   height: 100%;
 }
 
@@ -222,6 +228,11 @@ kbd {
   flex-direction: column;
   min-height: 0;
   background: var(--surface);
+  border: 1px solid var(--line);
+  /* The window's corner (about 18pt on macOS 26) less the frame, so the two
+     curves stay parallel. */
+  border-radius: 14px;
+  overflow: hidden;
 }
 
 /* The toolbar doubles as the window's title bar: dragging it moves the window.
@@ -250,19 +261,19 @@ kbd {
    open or not, so it never moves. Its icon, not its 8px of hover padding,
    starts where the band does. It is drawn over the window, and with the
    sidebar hidden the toolbar makes room for it: the button ends 24px past
-   --chrome-left, then comes the toolbar's 12px gap. It comes after the toolbar
-   in the page, so its no-drag region wins over the toolbar's drag one:
-   Electron applies them in order. */
+   --chrome-left, then comes the toolbar's 12px gap, counted from the card's
+   inner edge. It comes after the toolbar in the page, so its no-drag region
+   wins over the toolbar's drag one: Electron applies them in order. */
 .sidebar-toggle {
   position: fixed;
-  top: calc(var(--toolbar-height) / 2);
+  top: calc(var(--titlebar-height) / 2);
   left: calc(var(--chrome-left) - 8px);
   transform: translateY(-50%);
   -webkit-app-region: no-drag;
 }
 
 .sidebar-closed .toolbar {
-  padding-left: calc(var(--chrome-left) + 36px);
+  padding-left: calc(var(--chrome-left) + 36px - var(--frame) - 1px);
 }
 
 .title {
@@ -334,12 +345,12 @@ button.explain .icon {
   flex-direction: column;
   min-height: 0;
   background: var(--sidebar);
-  border-right: 1px solid var(--line);
 }
 
+/* Down to where the traffic lights' band ends; the frame is above it. */
 .titlebar {
   flex: none;
-  height: var(--toolbar-height);
+  height: calc(var(--titlebar-height) - var(--frame));
 }
 
 .sidebar-scroll {
@@ -1359,7 +1370,7 @@ figcaption {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding-top: var(--toolbar-height);
+  padding-top: var(--titlebar-height);
   background: rgb(0 0 0 / 0.18);
 }
 

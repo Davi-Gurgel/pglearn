@@ -15,6 +15,7 @@ const desktopBridge: DesktopBridge = {
   rows: (resultId, offset, count) => ipcRenderer.invoke("db:rows", resultId, offset, count),
   explain: (sql) => ipcRenderer.invoke("db:explain", sql),
   cancel: () => ipcRenderer.invoke("db:cancel"),
+  setTheme: (theme) => ipcRenderer.invoke("app:theme", theme),
 };
 
 // The preload runs before the page, with access to Node and Electron, but the

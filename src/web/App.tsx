@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type {
   DbError,
   DesktopBridge,
@@ -9,7 +9,7 @@ import type {
 } from "../contracts/ipc";
 import { ConnectionSheet } from "./ConnectionSheet";
 import { examples } from "./examples";
-import { PageIcon, PlanIcon, PlayIcon, SidebarIcon, StopIcon } from "./icons";
+import { MoonIcon, PageIcon, PlanIcon, PlayIcon, SidebarIcon, StopIcon, SunIcon } from "./icons";
 import { PlanView } from "./PlanView";
 import { Sidebar } from "./Sidebar";
 import { sqlstateClass, sqlstateDocs } from "./sqlstate";
@@ -26,6 +26,14 @@ type Action = "query" | "explain";
 const isMac = navigator.platform.startsWith("Mac");
 const mod = isMac ? "⌘" : "Ctrl+";
 
+// Whether the page is dark: macOS's appearance, or the one picked in the app
+// (the main process sets it, and the page sees it as prefers-color-scheme).
+const darkQuery = matchMedia("(prefers-color-scheme: dark)");
+const onDarkChange = (change: () => void) => {
+  darkQuery.addEventListener("change", change);
+  return () => darkQuery.removeEventListener("change", change);
+};
+
 export function App() {
   const bridge = window.desktopBridge;
   // Starts pending: the app checks the connection as soon as it opens.
@@ -40,6 +48,7 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editorHeight, setEditorHeight] = useState(180);
+  const dark = useSyncExternalStore(onDarkChange, () => darkQuery.matches);
 
   const checkConnection = useCallback(() => {
     void bridge
@@ -131,6 +140,16 @@ export function App() {
         <header className="toolbar">
           <Title available={bridge !== undefined} ping={ping} />
           <div className="toolbar-group">
+            {bridge && (
+              <button
+                className="tool"
+                onClick={() => void bridge.setTheme(dark ? "light" : "dark")}
+                title={`Switch to the ${dark ? "light" : "dark"} appearance`}
+                aria-label={dark ? "Light appearance" : "Dark appearance"}
+              >
+                {dark ? <SunIcon /> : <MoonIcon />}
+              </button>
+            )}
             <button
               className="tool"
               disabled={pending === null || canceling}
