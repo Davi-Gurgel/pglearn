@@ -1,34 +1,47 @@
 # Contributing
 
-## Workflow
+pglearn is a small, experimental macOS app. Its focus is explaining PostgreSQL execution plans. For a larger feature, open an issue to discuss the problem and scope before implementing it.
 
-1. Branch from `main`: `feat/table-viewer`, `fix/connection-timeout`, `docs/readme`.
-2. Open a pull request into `main`. CI must pass.
-3. Squash merge. The commit message is only the PR title plus its number, with an empty body (GitHub's default lists every commit in the branch):
+## Development
 
-   ```sh
-   gh pr merge 1 --squash --subject "feat: add table viewer (#1)" --body ""
-   ```
+Follow the setup in [README.md](README.md). Create a branch from `main`, keep the change focused, and open a pull request. Use Conventional Commit titles such as `fix: preserve session after cancellation`.
 
-## Commits
+Before opening a PR, run:
 
-Use [Conventional Commits](https://www.conventionalcommits.org/):
-
+```sh
+pnpm typecheck
+pnpm lint
+pnpm format --check
+pnpm test
+pnpm test:e2e
 ```
-feat: add table viewer pagination
-fix: handle connection timeout
-docs: update roadmap
+
+The Electron tests need the Pagila sample database on `localhost:5432`, or a `DATABASE_URL` pointing to a disposable Pagila instance. They use temporary tables for write tests. They launch with an isolated app profile so they do not read or replace your saved connection. On Linux, use `xvfb-run -a pnpm test:e2e`.
+
+For UI changes, inspect light and dark appearance and the 900×560 minimum window size. The renderer must also open without Electron at `http://localhost:5173`.
+
+CI must pass before squash merging. Keep the squash commit body empty so it does not repeat every development commit:
+
+```sh
+gh pr merge NUMBER --squash --subject "fix: concise change description (#NUMBER)" --body ""
 ```
 
 ## Releases
 
-Releases are tags on `main` following [Semantic Versioning](https://semver.org/). While the app is experimental, versions are `v0.x.y`.
+The `Release` workflow is manually dispatched with a version tag, for example `v0.1.0`. It verifies that the tag matches `package.json`, runs checks, builds universal macOS DMG/ZIP files, and creates a **draft** GitHub Release with SHA-256 checksums. Dispatch it from a reviewed commit on `main`; the workflow refuses other branches.
 
+Before publishing the draft:
+
+1. Confirm CI passed for the exact release commit.
+2. Download and mount the DMGs. Check the Applications shortcut and app icon.
+3. Launch the packaged app natively on each architecture being claimed as tested. Connect, run SQL, explain a join, cancel a query, and inspect both appearances.
+4. Verify the checksums, release notes, supported architectures, and any unsigned/notarized limitations.
+5. Publish the reviewed draft. Changing repository visibility is a separate, explicit maintainer action.
+
+`pnpm dist:mac` produces the same unsigned packages locally. To run the integration suite against a local package:
+
+```sh
+PGLEARN_EXECUTABLE="$PWD/release/mac-universal/pglearn.app/Contents/MacOS/pglearn" pnpm exec playwright test
 ```
-git tag v0.1.0
-git push origin v0.1.0
-```
 
-Pushing a tag will trigger the release workflow, which builds the installers and publishes them as a GitHub Release.
-
-If a fix ever needs to land on an older release while `main` has moved on, create a `release/x.y` branch from the tag at that point. Don't create it ahead of time.
+Apple Developer signing and notarization are not configured. Do not claim a release is signed or that an architecture was runtime-tested unless it actually was. No auto-updater is bundled; users download a new release manually.

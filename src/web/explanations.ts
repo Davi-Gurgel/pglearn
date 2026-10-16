@@ -331,6 +331,9 @@ function towardsPartials(finalize: PlanNode): PlanNode[] {
 const memoryAdvice =
   "Disk is slower. Raising `work_mem` for the session (`SET work_mem = '64MB'`) can reduce or avoid the spill, if the server can spare the memory: the limit applies to each sort or hash table separately, and a query can run several at once, in each of its processes.";
 
+// For the graph: a node that ran out of memory gets a mark on its card.
+export const spilledToDisk = (node: PlanNode): boolean => spilled(node) !== undefined;
+
 // Sort, Hash and HashAggregate run out of memory past `work_mem` (hash tables:
 // times `hash_mem_multiplier`) and continue on disk. In a parallel plan each
 // process reports its own numbers, under "Workers"; the node's own keys are
