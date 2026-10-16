@@ -37,13 +37,22 @@ try {
     ["light", "docs/screenshot.png"],
     ["dark", "docs/screenshot-dark.png"],
   ] as const) {
+    // Playwright pins the page to the light theme unless told otherwise; the
+    // native theme is for the window's own frame.
+    await page.emulateMedia({ colorScheme: theme });
     // Focused, or macOS draws the traffic lights grey.
-    const id = await app.evaluate(({ app, BrowserWindow, nativeTheme }, theme) => {
-      nativeTheme.themeSource = theme;
-      app.focus({ steal: true });
-      return BrowserWindow.getAllWindows()[0]!.getMediaSourceId();
-    }, theme);
-    await page.waitForTimeout(500);
+    const { id, focused } = await app.evaluate(
+      async ({ app, BrowserWindow, nativeTheme }, theme) => {
+        const window = BrowserWindow.getAllWindows()[0]!;
+        nativeTheme.themeSource = theme;
+        app.focus({ steal: true });
+        window.focus();
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        return { id: window.getMediaSourceId(), focused: window.isFocused() };
+      },
+      theme,
+    );
+    if (!focused) throw new Error("The window did not come to the front; try again.");
     // The media source id is "window:<CGWindowID>:0". -o leaves out the shadow.
     execFileSync("screencapture", ["-x", "-o", `-l${id.split(":")[1]}`, file]);
     console.log(`Wrote ${file}`);
