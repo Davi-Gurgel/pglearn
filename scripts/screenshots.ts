@@ -20,7 +20,11 @@ const env: Record<string, string> = Object.fromEntries(
 );
 env.DATABASE_URL ??= "postgres://postgres:postgres@localhost:5432/pagila";
 delete env.ELECTRON_RUN_AS_NODE;
-const app = await electron.launch({ args: [`--user-data-dir=${userData}`, "."], env });
+// A window behind others stops painting unless told not to.
+const app = await electron.launch({
+  args: ["--disable-backgrounding-occluded-windows", `--user-data-dir=${userData}`, "."],
+  env,
+});
 try {
   const page = await app.firstWindow();
   await page.locator(".title-main").getByText("pagila").waitFor();
