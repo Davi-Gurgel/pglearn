@@ -111,20 +111,6 @@ export function App() {
   });
 
   const idle = bridge !== undefined && pending === null;
-  // Right of the traffic lights, where Xcode keeps it: in the sidebar's title
-  // bar while it is open, in the toolbar once it is closed, at the same spot.
-  // It has to sit inside the drag region it overlaps: Electron applies drag
-  // and no-drag regions in document order, so a drag region later in the page
-  // would swallow the clicks of a button placed before it.
-  const sidebarToggle = (
-    <button
-      className="icon-button"
-      onClick={() => setSidebarOpen(!sidebarOpen)}
-      title={`${sidebarOpen ? "Hide" : "Show"} the sidebar (⌃⌘S)`}
-    >
-      <SidebarIcon />
-    </button>
-  );
   return (
     <div className={sidebarOpen ? "app" : "app sidebar-closed"}>
       {/* Keep the catalog and its selection when the sidebar is hidden. */}
@@ -139,13 +125,10 @@ export function App() {
           setSql(text);
           if (run) start("query", text);
         }}
-      >
-        {sidebarToggle}
-      </Sidebar>
+      />
 
       <main className="main">
         <header className="toolbar">
-          {!sidebarOpen && sidebarToggle}
           <Title available={bridge !== undefined} ping={ping} />
           <div className="toolbar-group">
             <button
@@ -204,6 +187,15 @@ export function App() {
           )}
         </section>
       </main>
+
+      {/* Right of the traffic lights, where Xcode keeps it. */}
+      <button
+        className="icon-button sidebar-toggle"
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        title={`${sidebarOpen ? "Hide" : "Show"} the sidebar (⌃⌘S)`}
+      >
+        <SidebarIcon />
+      </button>
 
       {sheetOpen && bridge && (
         <ConnectionSheet

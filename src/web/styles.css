@@ -34,7 +34,12 @@
   --run: #2f9e5b;
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
-  --toolbar-height: 44px;
+  /* The band around the traffic lights, as Electron reports it (see
+     titleBarOverlay in src/desktop/main.ts): its height, and where the page's
+     own controls can start. A browser tab, or a full-screen window where the
+     lights are hidden, gets the fallbacks: a plain bar from the edge. */
+  --toolbar-height: env(titlebar-area-height, 52px);
+  --chrome-left: env(titlebar-area-x, 12px);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -191,14 +196,13 @@ kbd {
 }
 
 /* Layout: the sidebar, then the main column: toolbar, editor, splitter and
-   the output taking the rest. */
+   the output taking the rest. Both reach the window's edges, as in Finder and
+   Xcode, so no inner corner has to follow the window's rounded ones. */
 
 .app {
   display: grid;
   /* minmax(0, ...) lets a wide results grid scroll instead of widening the page. */
   grid-template-columns: 240px minmax(0, 1fr);
-  gap: 4px;
-  padding: 4px;
   height: 100%;
 }
 
@@ -215,9 +219,6 @@ kbd {
   flex-direction: column;
   min-height: 0;
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  overflow: hidden;
 }
 
 /* The toolbar doubles as the window's title bar: dragging it moves the window.
@@ -232,16 +233,6 @@ kbd {
   -webkit-app-region: no-drag;
 }
 
-/* --chrome-left is where the page's own controls start: past the traffic
-   lights in the desktop window, at the edge in a browser tab. */
-:root {
-  --chrome-left: 12px;
-}
-
-html.desktop {
-  --chrome-left: 84px;
-}
-
 .toolbar {
   flex: none;
   display: flex;
@@ -252,10 +243,23 @@ html.desktop {
   border-bottom: 1px solid var(--line);
 }
 
-/* With the sidebar hidden the traffic lights and the sidebar button sit on
-   the toolbar. */
+/* The sidebar button stays beside the traffic lights whether the sidebar is
+   open or not, so it never moves. Its icon, not its 8px of hover padding,
+   starts where the band does. It is drawn over the window, and with the
+   sidebar hidden the toolbar makes room for it: the button ends 24px past
+   --chrome-left, then comes the toolbar's 12px gap. It comes after the toolbar
+   in the page, so its no-drag region wins over the toolbar's drag one:
+   Electron applies them in order. */
+.sidebar-toggle {
+  position: fixed;
+  top: calc(var(--toolbar-height) / 2);
+  left: calc(var(--chrome-left) - 8px);
+  transform: translateY(-50%);
+  -webkit-app-region: no-drag;
+}
+
 .sidebar-closed .toolbar {
-  padding-left: var(--chrome-left);
+  padding-left: calc(var(--chrome-left) + 36px);
 }
 
 .title {
@@ -327,14 +331,12 @@ button.explain .icon {
   flex-direction: column;
   min-height: 0;
   background: var(--sidebar);
+  border-right: 1px solid var(--line);
 }
 
 .titlebar {
   flex: none;
-  display: flex;
-  align-items: center;
   height: var(--toolbar-height);
-  padding-left: var(--chrome-left);
 }
 
 .sidebar-scroll {

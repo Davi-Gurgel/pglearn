@@ -22,6 +22,7 @@
     "sync:repos": ".repos/sync.sh",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "test:e2e": "pnpm build && playwright test",
+    "screenshots": "pnpm build && node --experimental-strip-types scripts/screenshots.ts",
     "dist:mac": "pnpm build && electron-builder --mac --publish never"
   },
   "dependencies": {

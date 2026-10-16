@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import type { DesktopBridge, PingResult, Table } from "../contracts/ipc";
 import { examples } from "./examples";
 import {
@@ -27,21 +27,19 @@ type Ping = PingResult | "pending" | null;
 // schemas and their tables, under the example queries (a short, fixed list
 // first, so a long list of tables cannot push it out of sight). Clicking a
 // table, or an example, puts a query for it in the editor; double-clicking a
-// table also runs it. `children` go in the title bar, beside the traffic lights.
+// table also runs it.
 export function Sidebar({
   bridge,
   ping,
   sql,
   onConnection,
   onPick,
-  children,
 }: {
   bridge: DesktopBridge | undefined;
   ping: Ping;
   sql: string;
   onConnection: () => void;
   onPick: (sql: string, run?: boolean) => void;
-  children: ReactNode;
 }) {
   const connected = ping !== null && ping !== "pending" && ping.ok;
   const [tables, setTables] = useState<Table[] | string | null>(null);
@@ -85,7 +83,7 @@ export function Sidebar({
 
   return (
     <nav className="sidebar">
-      <div className="titlebar">{children}</div>
+      <div className="titlebar" />
       <div className="sidebar-scroll">
         <div className="section-title">Examples</div>
         {examples.map((example) => (

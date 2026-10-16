@@ -160,30 +160,42 @@ test("switches connections only on success and expires the old result", async ()
   expect(result.old).toMatchObject({ ok: false, error: { kind: "client" } });
 });
 
-test("keeps both themes aligned at the minimum window size", async () => {
+test("lines the toolbar up with the traffic lights", async () => {
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setSize(900, 560));
+  // On macOS, the band Electron reports around the traffic lights
+  // (titleBarOverlay). Elsewhere, as in CI, the CSS falls back to a plain bar.
+  const band = process.platform === "darwin" ? { x: 98, height: 52 } : { x: 12, height: 52 };
+  const toggle = page.getByRole("button", { name: /the sidebar/ });
+  for (const open of [true, false]) {
+    const box = (await toggle.boundingBox())!;
+    // The icon starts at the band's edge; the button has 8px of padding.
+    expect(box.x + 8).toBe(band.x);
+    expect(box.y + box.height / 2).toBe(band.height / 2);
+    expect(await page.locator(".toolbar").boundingBox()).toMatchObject({ y: 0, height: 52 });
+    if (open) await toggle.click();
+  }
+  await expect(page.locator(".sidebar")).toBeHidden();
+  await toggle.click();
+});
+
+test("fills uncovered window with the main column's color in both themes", async () => {
   for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: theme });
     await app.evaluate(({ nativeTheme }, value) => {
       nativeTheme.themeSource = value;
     }, theme);
-    await expect(page.locator(".main")).toHaveCSS("border-top-left-radius", "12px");
-    await expect
-      .poll(() =>
-        page.evaluate(() => ({
-          body: getComputedStyle(document.body).backgroundColor,
-          sidebar: getComputedStyle(document.querySelector(".sidebar")!).backgroundColor,
-        })),
-      )
-      .toEqual(
-        theme === "light"
-          ? { body: "rgb(233, 233, 236)", sidebar: "rgb(233, 233, 236)" }
-          : { body: "rgb(42, 42, 45)", sidebar: "rgb(42, 42, 45)" },
-      );
-    const sidebar = await page.locator(".titlebar").boundingBox();
-    const toolbar = await page.locator(".toolbar").boundingBox();
-    expect(Math.abs(sidebar!.y - toolbar!.y)).toBeLessThanOrEqual(1);
+    const surface = await page.evaluate(
+      () => getComputedStyle(document.querySelector(".main")!).backgroundColor,
+    );
+    const window = await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0]!.getBackgroundColor(),
+    );
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(window.slice(i, i + 2), 16));
+    expect(surface).toBe(`rgb(${r}, ${g}, ${b})`);
   }
+  await app.evaluate(({ nativeTheme }) => {
+    nativeTheme.themeSource = "system";
+  });
 });
 
 test("rejects invalid IPC arguments and cross-file navigation", async () => {

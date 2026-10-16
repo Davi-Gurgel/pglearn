@@ -1,6 +1,14 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { app, BrowserWindow, ipcMain, session, shell, type IpcMainInvokeEvent } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  nativeTheme,
+  session,
+  shell,
+  type IpcMainInvokeEvent,
+} from "electron";
 import {
   cancelQuery,
   closeDatabase,
@@ -39,10 +47,14 @@ function createWindow(): void {
     height: 900,
     minWidth: 900,
     minHeight: 560,
-    // Align native traffic lights with the 44px toolbar inside the 4px frame.
+    // The traffic lights are 14pt tall and 60pt wide. titleBarOverlay hands
+    // the page the band around them (2y + 14 = 52pt tall, ending 2x + 60 =
+    // 98pt in) as env(titlebar-area-*), so the toolbar follows from these two
+    // numbers instead of repeating them in CSS.
     titleBarStyle: "hidden",
-    trafficLightPosition: { x: 18, y: 19 },
-    backgroundColor: "#e9e9ec",
+    trafficLightPosition: { x: 19, y: 19 },
+    titleBarOverlay: process.platform === "darwin",
+    backgroundColor: background(),
     webPreferences: {
       preload: join(__dirname, "../preload/preload.js"),
       sandbox: true,
@@ -72,6 +84,17 @@ function createWindow(): void {
     void window.loadFile(rendererFile);
   }
 }
+
+// What the window shows where the page has not drawn yet: the strip a resize
+// uncovers before the next frame. It is the main column's color (--surface in
+// styles.css), so the strip blends in instead of flashing in the other theme.
+function background(): string {
+  return nativeTheme.shouldUseDarkColors ? "#1e1e20" : "#ffffff";
+}
+
+nativeTheme.on("updated", () => {
+  for (const window of BrowserWindow.getAllWindows()) window.setBackgroundColor(background());
+});
 
 function openExternal(url: string): void {
   if (url.startsWith("https://")) void shell.openExternal(url);
