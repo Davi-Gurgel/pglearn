@@ -13,9 +13,9 @@ mac:
   category: public.app-category.developer-tools
   target:
     - target: dmg
-      arch: [arm64, x64]
+      arch: [universal]
     - target: zip
-      arch: [arm64, x64]
+      arch: [universal]
   icon: build/icon.png
   minimumSystemVersion: "13.0"
   identity: null

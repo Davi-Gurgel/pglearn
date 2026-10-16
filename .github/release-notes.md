@@ -6,7 +6,7 @@ pglearn's first experimental macOS release: explore PostgreSQL execution plans w
 
 ### Installation
 
-Requires macOS 13 or later and a separate PostgreSQL server. Download **arm64** for Apple Silicon or **x64** for Intel. Open the DMG and drag pglearn into Applications, or extract the ZIP.
+Requires macOS 13 or later and a separate PostgreSQL server. Download the **universal** build. It runs natively on both Apple Silicon and Intel Macs; Apple Silicon does not need Rosetta. Open the DMG and drag pglearn into Applications, or extract the ZIP.
 
 These builds are **unsigned and not notarized**. macOS may block the first launch; see [Apple's instructions](https://support.apple.com/en-us/102445). SHA-256 checksums are attached.
 

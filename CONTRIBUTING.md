@@ -28,20 +28,20 @@ gh pr merge NUMBER --squash --subject "fix: concise change description (#NUMBER)
 
 ## Releases
 
-The `Release` workflow is manually dispatched with a version tag, for example `v0.1.0`. It verifies that the tag matches `package.json`, runs checks, builds Apple Silicon and Intel DMG/ZIP files, and creates a **draft** GitHub Release with SHA-256 checksums. Dispatch it from a reviewed commit on `main`; the workflow refuses other branches.
+The `Release` workflow is manually dispatched with a version tag, for example `v0.1.0`. It verifies that the tag matches `package.json`, runs checks, builds universal macOS DMG/ZIP files, and creates a **draft** GitHub Release with SHA-256 checksums. Dispatch it from a reviewed commit on `main`; the workflow refuses other branches.
 
 Before publishing the draft:
 
 1. Confirm CI passed for the exact release commit.
 2. Download and mount the DMGs. Check the Applications shortcut and app icon.
-3. Launch the packaged app on each architecture being claimed as tested. Connect, run SQL, explain a join, cancel a query, and inspect both appearances.
+3. Launch the packaged app natively on each architecture being claimed as tested. Connect, run SQL, explain a join, cancel a query, and inspect both appearances.
 4. Verify the checksums, release notes, supported architectures, and any unsigned/notarized limitations.
 5. Publish the reviewed draft. Changing repository visibility is a separate, explicit maintainer action.
 
 `pnpm dist:mac` produces the same unsigned packages locally. To run the integration suite against a local package:
 
 ```sh
-PGLEARN_EXECUTABLE="$PWD/release/mac-arm64/pglearn.app/Contents/MacOS/pglearn" pnpm exec playwright test
+PGLEARN_EXECUTABLE="$PWD/release/mac-universal/pglearn.app/Contents/MacOS/pglearn" pnpm exec playwright test
 ```
 
 Apple Developer signing and notarization are not configured. Do not claim a release is signed or that an architecture was runtime-tested unless it actually was. No auto-updater is bundled; users download a new release manually.

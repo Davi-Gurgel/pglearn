@@ -22,13 +22,9 @@ A macOS desktop client for learning to read execution plans. Run a query, open i
 
 ## Download
 
-**Experimental v0.1 · macOS 13 or newer.** Choose the asset for your Mac from [GitHub Releases](https://github.com/Davi-Gurgel/pglearn/releases/latest):
+**Experimental v0.1 · macOS 13 or newer.** Download `pglearn-0.1.0-universal.dmg` from [GitHub Releases](https://github.com/Davi-Gurgel/pglearn/releases/latest).
 
-| Mac                          | Download                  |
-| ---------------------------- | ------------------------- |
-| Apple Silicon (M1 and newer) | `pglearn-0.1.0-arm64.dmg` |
-| Intel                        | `pglearn-0.1.0-x64.dmg`   |
-
+One universal app runs natively on both Apple Silicon (M1 and newer) and Intel Macs. Apple Silicon Macs do not need Rosetta.
 Open the DMG and drag **pglearn** into **Applications**. ZIPs and SHA-256 checksums are also provided. PostgreSQL is a separate server; it is not bundled with the app.
 
 This first release is **unsigned and not notarized**. macOS may block its first launch. After verifying that the download came from this repository, follow [Apple's instructions for opening an app from an unidentified developer](https://support.apple.com/en-us/102445). Signing and notarization are not configured yet.
@@ -82,7 +78,7 @@ pnpm lint
 pnpm format --check
 pnpm test            # plan interpretation and value conversion
 pnpm test:e2e        # real Electron + PostgreSQL; start Pagila first
-pnpm dist:mac        # DMG + ZIP for Apple Silicon and Intel, in release/
+pnpm dist:mac        # universal DMG + ZIP, in release/
 ```
 
 Connect through the app, or set `DATABASE_URL` before starting it. A connection previously saved by the app takes precedence. The plain-browser renderer previews the UI with database actions disabled.
